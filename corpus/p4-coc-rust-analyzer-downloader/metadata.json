@@ -36,6 +36,6 @@
     ]
   },
   "fetched_paths": [],
-  "notes": "new AdmZip(tempFile).extractAllTo(storagePath) with no member-name check (P4); path.join(storagePath, release.name) with a release-shaped name and no boundary (P3).",
-  "last_verified": "2026-10-10"
+  "notes": "new AdmZip(tempFile).extractAllTo(storagePath) with no call-site member check (call-site shape P4; demotes to dependency-guarded/unrecognized_guard because adm-zip>=0.6.1 sanitizes member names and the pinned version is 0.6.1); path.join(storagePath, release.name) with a release-shaped name and no boundary (P3).",
+  "last_verified": "2026-10-11"
 }

@@ -138,3 +138,35 @@ def test_scan_json_schema(capsys):
     assert "semgrep_version" in d
     assert d["findings"]
     assert "checklist" in d and "coverage" in d
+
+
+def test_scan_canonical_boundary_guard_complete(capsys):
+    # realpath(member-join) + startswith(root + os.sep) reject, with the
+    # sink consuming the checked variable: the site resolves
+    # recognized-complete and reports no deterministic class.
+    code = main(["scan", str(FIXTURES / "cli" / "canonical-guard-python")])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "recognized_complete=1" in out
+
+
+def test_scan_dep_guarded_extractor_unrecognized(capsys):
+    # adm-zip pinned >= the sanitizing minimum: the P4 demotes to a
+    # dependency-guard note and the site goes to manual review.
+    code = main(["scan", str(FIXTURES / "cli" / "dep-guarded-adm-zip")])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "[P4]" not in out
+    assert "dependency-guarded" in out
+    assert "unrecognized_guard=1" in out
+
+
+def test_scan_dep_guarded_below_min_stays_p4(capsys):
+    # Lockfile evidence that the extractor predates the sanitizer keeps
+    # the P4 deterministic.
+    code = main(
+        ["scan", str(FIXTURES / "cli" / "dep-guarded-adm-zip-vuln")]
+    )
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "[P4]" in out

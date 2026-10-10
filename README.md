@@ -101,20 +101,40 @@ trusting the classification.
 Raw semgrep hits are inputs, not verdicts. For every recognized entry
 point (the "site"), the CLI resolves:
 
-1. If a deterministic weak-class finding (P1-P4, P6-P8) fired inside the
-   site and its source matches a sink bound to the site, the site is a
-   deterministic finding of that class.
-2. Otherwise, if a raw P0 fired but the sink's argument matches the
-   argument of a recognized complete-guard call in the same site, the
-   site is `recognized_complete` and suppressed.
-3. Otherwise, if a raw P0 fired and an intervening call or
+1. If every deterministic weak-class finding at the site is a
+   join/member class (P2, P3, P4) and a bound canonical-boundary guard
+   is present, the site is `recognized_complete`. The guard must be the
+   in-function pair of a canonicalizing assignment
+   (`os.path.realpath`/`abspath`/`normpath`, `.resolve()`,
+   `path.resolve`, `fs.realpathSync`) and a reject-arm `if` whose
+   condition boundary-checks that variable with a separator-joined
+   prefix (`v.startswith(root + os.sep)`, `v.startsWith(root +
+   path.sep)`) or `v.is_relative_to(root)`. The checked variable must
+   also appear in a sink call's first argument, so a boundary check on
+   an unrelated value does not clear the site. Sites carrying other
+   classes (P1 strip-only, P7, P8) stay deterministic: the check does
+   not cure those bugs.
+2. Otherwise, if a deterministic weak-class finding (P1-P4, P6-P8) fired
+   inside the site and its source matches a sink bound to the site, the
+   site is a deterministic finding of that class.
+3. Otherwise, if a raw P0 fired but the sink's argument matches the
+   argument of a recognized complete-guard call or a bound
+   canonical-boundary guard in the same site, the site is
+   `recognized_complete` and suppressed.
+4. Otherwise, if a raw P0 fired and an intervening call or
    check-and-throw that reads as validation exists in the site, the site
    is `guard detected, shape unrecognized`.
-4. Otherwise the raw P0 stays a deterministic P0 finding.
+5. Otherwise the raw P0 stays a deterministic P0 finding.
 
 Argument-binding means an unrelated `assert_under_root(config_path)` in
 the same handler cannot launder `open(path)`: the sink argument must be
 the same identifier the guard call touched.
+
+Near-misses that stay findings: `startswith(root)` with no separator
+join (sibling prefixes pass), a `startswith` on a variable that was
+never canonicalized, a boundary condition with no reject arm, and a
+canonical-boundary check whose checked variable is not the one the sink
+consumes.
 
 ## Clean results
 
@@ -139,7 +159,23 @@ one that is provably free of path handling.
   a `startswith`, `..\\` on Windows.
 - Archive member checks enumerate Python `zipfile`/`tarfile`/
   `shutil.unpack_archive` and TypeScript `adm-zip`/`tar`/`decompress`/
-  `unzipper` shapes.
+  `unzipper` shapes. Bulk extractors whose member-name checks live
+  inside the dependency are handled conservatively: an `adm-zip`
+  `extractAllTo`/`extractAllToAsync`/`extractEntryTo`/
+  `extractEntryToAsync` P4 demotes to a `dependency-guarded` note
+  (the site resolves `unrecognized_guard`, never silent) because
+  adm-zip >= 0.6.1 canonicalizes and sanitizes member names and
+  rejects writes through in-root symlinks. `package-lock.json` /
+  `package.json` at the target root are consulted offline as version
+  evidence: an exact pin >= 0.6.1 is recorded as `confirmed`, a pin
+  below 0.6.1 keeps the deterministic P4, and no evidence leaves the
+  note `unverified` ("verify version"). Ranges do not count as
+  evidence; only exact pins do. A demoted finding is a statement about
+  the call-site shape, not about exploitability: the installed
+  version still has to be checked by the reviewer when no manifest
+  pin exists, and the corpus keeps the coc-rust-analyzer
+  `extractAllTo` instance pinned vulnerable as a call-site shape with
+  an `accepted_misses` note rather than relabeling it clean.
 - Target `.gitignore`, `.semgrepignore`, and inline `# nosemgrep` are
   not honored for exclusions, and they are listed in the coverage
   report. `node_modules`, `dist`, `build`, `vendor(s)`, `third_party`,

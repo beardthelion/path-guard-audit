@@ -129,6 +129,11 @@ def render_text(
                     out.append(f"      guard: {_fmt_loc(loc)}")
                 for loc in s["sinks"]:
                     out.append(f"      sink:  {_fmt_loc(loc)}")
+                for dg in s.get("dependency_guards", []):
+                    out.append(
+                        f"      dep-guard: {dg['path']}:{dg['line']} "
+                        f"({dg['reason']})"
+                    )
                 if s["test_path"]:
                     out.append("      (under a test/example path)")
     out.append("")
@@ -145,6 +150,11 @@ def render_text(
             )
             for loc in s["guard_locations"]:
                 out.append(f"    guard candidate: {_fmt_loc(loc)}")
+            for dg in s.get("dependency_guards", []):
+                out.append(
+                    f"    dependency guard: {dg['path']}:{dg['line']} "
+                    f"({dg['reason']})"
+                )
             for loc in s["sinks"]:
                 out.append(f"    sink:            {_fmt_loc(loc)}")
             if s["test_path"]:

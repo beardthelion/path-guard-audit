@@ -563,3 +563,347 @@ def test_sites_sorted_by_path_line():
         ("a.py", 10),
         ("b.py", 1),
     ]
+
+
+def canon_probe(path, line, end, lines):
+    return mk_result_with_lines(
+        "probe.canon",
+        path,
+        line,
+        lines,
+        {"probe_role": "canonical_boundary_guard"},
+    )
+
+
+def test_canonical_boundary_clears_p4():
+    # realpath + startswith(root + os.sep) + reject on the variable the
+    # sink consumes is a complete guard: the P4 site resolves
+    # recognized-complete.
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 20),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    18,
+                    '        open(target, "wb")',
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "srv.py",
+                    18,
+                    '        open(target, "wb")',
+                    {"guard_class": "P4"},
+                ),
+                canon_probe(
+                    "srv.py",
+                    16,
+                    18,
+                    '        if not target.startswith('
+                    "os.path.realpath(dest) + os.sep\n"
+                    "        ) and target != os.path.realpath(dest):\n"
+                    "            continue",
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "recognized_complete"
+
+
+def test_canonical_boundary_clears_p2_p3():
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 20),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    18,
+                    "        return open(target).read()",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "srv.py",
+                    13,
+                    "        target = os.path.join(dest, member)",
+                    {"guard_class": "P3"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p2",
+                    "srv.py",
+                    16,
+                    "        if not target.is_relative_to(root):",
+                    {"guard_class": "P2"},
+                ),
+                canon_probe(
+                    "srv.py",
+                    16,
+                    18,
+                    "        if not target.is_relative_to(root):\n"
+                    '            raise ValueError("escape")',
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "recognized_complete"
+
+
+def test_canonical_boundary_other_variable_does_not_launder():
+    # The boundary check is on `checked`, but the sink consumes the
+    # un-canonicalized join: strict sink-arg binding keeps the P4.
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 20),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    18,
+                    '        open(os.path.join(dest, member), "wb")',
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "srv.py",
+                    18,
+                    '        open(os.path.join(dest, member), "wb")',
+                    {"guard_class": "P4"},
+                ),
+                canon_probe(
+                    "srv.py",
+                    16,
+                    17,
+                    "        if not checked.startswith("
+                    "os.path.realpath(dest) + os.sep):\n"
+                    "            continue",
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]
+
+
+def test_canonical_boundary_no_separator_stays_deterministic():
+    # startswith(root) without a separator join is prefix-confusable;
+    # the checked-var extractor ignores it and the site stays P4.
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 20),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    18,
+                    '        open(target, "wb")',
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "srv.py",
+                    18,
+                    '        open(target, "wb")',
+                    {"guard_class": "P4"},
+                ),
+                canon_probe(
+                    "srv.py",
+                    16,
+                    17,
+                    "        if not target.startswith("
+                    "os.path.realpath(dest)):\n"
+                    "            continue",
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]
+
+
+def test_canonical_boundary_does_not_clear_unrelated_class():
+    # A bound canonical guard clears P2/P3/P4 only; a P1 strip-only
+    # shape at the same site keeps it deterministic.
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 20),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    18,
+                    '        open(target, "wb")',
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "srv.py",
+                    18,
+                    '        open(target, "wb")',
+                    {"guard_class": "P4"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p1",
+                    "srv.py",
+                    12,
+                    '        member = member.replace("..", "")',
+                    {"guard_class": "P1"},
+                ),
+                canon_probe(
+                    "srv.py",
+                    16,
+                    17,
+                    "        if not target.startswith("
+                    "os.path.realpath(dest) + os.sep):\n"
+                    "            continue",
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P1", "P4"]
+
+
+def _dep_fixture(tmp_path, lock_version=None, imports_adm=True):
+    src = tmp_path / "downloader.ts"
+    src.write_text(
+        ("import AdmZip from 'adm-zip';\n" if imports_adm else "")
+        + "export function dl(storagePath: string, data: Buffer) {\n"
+        + "  new AdmZip(data).extractAllTo(storagePath, true, true);\n"
+        + "}\n"
+        if imports_adm
+        else "export function dl(storagePath: string, z: any) {\n"
+        + "  z.extractAllTo(storagePath, true, true);\n"
+        + "}\n"
+    )
+    if lock_version is not None:
+        (tmp_path / "package-lock.json").write_text(
+            '{"packages": {"node_modules/adm-zip": {"version": "'
+            + lock_version
+            + '"}}}'
+        )
+    return src
+
+
+def test_dependency_guarded_extractor_demotes_p4(tmp_path):
+    src = _dep_fixture(tmp_path)
+    result = classify_results(
+        scan(
+            [
+                handler("downloader.ts", 2, 4),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "downloader.ts",
+                    3,
+                    "  new AdmZip(data).extractAllTo(storagePath, true, true);",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "downloader.ts",
+                    3,
+                    "  new AdmZip(data).extractAllTo(storagePath, true, true);",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["downloader.ts"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    assert site["classes"] == []
+    [note] = site["dependency_guards"]
+    assert note["package"] == "adm-zip"
+    assert note["version_status"] == "unverified"
+
+
+def test_dependency_guarded_confirmed_version(tmp_path):
+    src = _dep_fixture(tmp_path, lock_version="0.6.1")
+    result = classify_results(
+        scan(
+            [
+                handler("downloader.ts", 2, 4),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "downloader.ts",
+                    3,
+                    "  new AdmZip(data).extractAllTo(storagePath, true, true);",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "downloader.ts",
+                    3,
+                    "  new AdmZip(data).extractAllTo(storagePath, true, true);",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["downloader.ts"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    [note] = site["dependency_guards"]
+    assert note["version"] == "0.6.1"
+    assert note["version_status"] == "confirmed"
+
+
+def test_dependency_guarded_vulnerable_version_stays_p4(tmp_path):
+    src = _dep_fixture(tmp_path, lock_version="0.5.10")
+    result = classify_results(
+        scan(
+            [
+                handler("downloader.ts", 2, 4),
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "downloader.ts",
+                    3,
+                    "  new AdmZip(data).extractAllTo(storagePath, true, true);",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["downloader.ts"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]
+    assert site["dependency_guards"] == []
+
+
+def test_non_admzip_extractall_stays_p4(tmp_path):
+    src = _dep_fixture(tmp_path, imports_adm=False)
+    result = classify_results(
+        scan(
+            [
+                handler("downloader.ts", 1, 3),
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "downloader.ts",
+                    2,
+                    "  z.extractAllTo(storagePath, true, true);",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["downloader.ts"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]

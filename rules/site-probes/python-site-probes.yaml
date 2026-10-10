@@ -318,3 +318,140 @@ rules:
           - metavariable-regex:
               metavariable: $COND
               regex: '(?i).*(is_?relative|startswith|endswith|include|within|allow|valid|resolve|realpath|normpath|normaliz|absolut|canonic|sanitiz|escape|traversal|outside|inside|contain|prefix|basename|member|link|isfile|exists).*'
+
+  - id: path-guard-audit-probe-canonical-boundary-python
+    message: >-
+      Site probe: in-function canonical-boundary guard. The same
+      function assigns a variable from a canonicalizing call
+      (os.path.realpath / abspath / normpath, their bare imports, or
+      <expr>.resolve()) and, inside an `if` that rejects (raise /
+      return / continue / break), boundary-checks that variable:
+      `v.startswith(root + os.sep)`-with-separator, `v.startswith(root +
+      sep)`-style sep variable, or `v.is_relative_to(root)`. The
+      metavariable $V must unify, so a check on a value that was never
+      canonicalized does not match. classify.py then requires the
+      checked variable to appear in a sink call's first argument before
+      resolving the site recognized-complete, so a check on an unrelated
+      value cannot launder it.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: canonical_boundary_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # What this probe deliberately does NOT match: startswith(root)
+    # without a separator join (sibling-prefix escapes pass that check),
+    # a startswith on a variable never assigned from a canonicalizing
+    # call, and a boundary condition with no reject arm. Those shapes
+    # stay weak/deterministic instead of laundering into complete.
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              def $F(...):
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+      - pattern-either:
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $V = os.path.realpath(...)
+                ...
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $V = os.path.abspath(...)
+                ...
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $V = os.path.normpath(...)
+                ...
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $V = realpath(...)
+                ...
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $V = abspath(...)
+                ...
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $V = normpath(...)
+                ...
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $V = $X.resolve()
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $V = os.path.realpath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $V = os.path.abspath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $V = os.path.normpath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $V = realpath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $V = abspath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $V = normpath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $V = $X.resolve()
+                ...
+      - pattern-either:
+          - pattern: |
+              if $C:
+                ...
+                raise $E
+                ...
+          - pattern: |
+              if $C:
+                ...
+                return ...
+                ...
+          - pattern: |
+              if $C:
+                ...
+                continue
+                ...
+          - pattern: |
+              if $C:
+                ...
+                break
+                ...
+      - metavariable-pattern:
+          metavariable: $C
+          pattern-either:
+            - pattern: <... $V.startswith($R + os.sep) ...>
+            - pattern: <... $V.startswith($R + os.path.sep) ...>
+            - pattern: <... $V.startswith($R + sep) ...>
+            - pattern: <... $V.startswith($R + $S.sep) ...>
+            - pattern: <... $V.startswith($R + "/") ...>
+            - pattern: <... $V.startswith($R + '/') ...>
+            - pattern: <... $V.is_relative_to($R) ...>

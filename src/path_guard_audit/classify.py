@@ -43,10 +43,54 @@ ROLE_SINK = "path_sink"
 ROLE_COMPLETE_GUARD = "complete_guard"
 ROLE_INTERVENING = "intervening_validation"
 ROLE_CHECKLIST = "checklist"
+# In-function canonical-boundary pair: a variable assigned from a
+# canonicalizing call (realpath/abspath/normpath/resolve) that an `if`
+# reject-arm boundary-checks with a separator-joined prefix or
+# is_relative_to. Stricter than a named guard call: the rule only fires
+# when the checked variable is itself canonicalized, and resolution
+# additionally requires that variable to reach a sink's first argument.
+ROLE_CANON_BOUNDARY = "canonical_boundary_guard"
 
 # The no-guard baseline class. Every other guard_class value on a
 # deterministic-tier result is a weak class that outranks it at a site.
 NO_GUARD_CLASS = "P0"
+
+# Classes a bound canonical-boundary guard can clear: the join/member
+# classes (P2 prefix-without-canonicalization, P3 join-without-boundary,
+# P4 member traversal) all name the gap a canonicalize + boundary check
+# fills. Other classes name different bugs (P1 strip-only shaping, P7
+# decoded inputs, P8 env allowlists) that the same check does not cure,
+# so a site carrying them stays deterministic.
+_CANON_BOUNDARY_CLASSES = frozenset({"P2", "P3", "P4"})
+
+# Bulk-extract calls whose member-name safety lives inside the
+# dependency and cannot be verified intra-function. When a P4 finding's
+# matched call is one of these methods AND the file references the
+# package, the finding is demoted out of the deterministic class set into
+# a dependency-guard note: ``unverified`` resolves the site
+# unrecognized_guard ("dependency-guarded, verify version"), a manifest
+# pin at or above the minimum records the version as evidence, and a pin
+# *below* the minimum leaves the P4 in place.
+_DEP_GUARDED_EXTRACTORS = {
+    # adm-zip >= 0.6.1 runs every entry name through Utils.canonical +
+    # Utils.sanitize (containment under the target root) and
+    # filetools.assertPathSafe (rejects writes through pre-existing
+    # in-root symlinks). Older versions sanitize names but followed
+    # destination symlinks (CVE-2026-76845 / GHSA-vwc7-r8mq-g2x9), and
+    # pre-0.5.10 lacked even the name check (GHSL-2020-198).
+    "extractAllTo": ("adm-zip", (0, 6, 1)),
+    "extractAllToAsync": ("adm-zip", (0, 6, 1)),
+    "extractEntryTo": ("adm-zip", (0, 6, 1)),
+    "extractEntryToAsync": ("adm-zip", (0, 6, 1)),
+}
+
+_DEP_METHOD_RE = re.compile(
+    r"\.(" + "|".join(sorted(_DEP_GUARDED_EXTRACTORS)) + r")\s*\("
+)
+_DEP_PKG_NEEDLES = {"adm-zip": re.compile(r"adm-zip|AdmZip")}
+# Exact-pins only count as version evidence; a range (^, ~, >=) does not
+# prove what got installed.
+_EXACT_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 RESOLUTION_DETERMINISTIC = "deterministic"
 RESOLUTION_RECOGNIZED_COMPLETE = "recognized_complete"
@@ -90,6 +134,157 @@ _EXT_LANGUAGE = {
 }
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# Boundary-check call subjects inside a canonical-boundary probe hit:
+# `v.startswith(<arg containing a separator join>)`, `v.startsWith(...)`,
+# `v.is_relative_to(root)`. A startswith whose argument lacks a
+# separator join is not a boundary check and is ignored, so a second,
+# unrelated startswith in the same condition cannot smuggle its subject
+# into the bound-variable set.
+_CHECKED_VAR_RE = re.compile(
+    r"([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*"
+    r"(startswith|startsWith|is_relative_to|relative_to)\s*\("
+)
+
+
+def _balanced_arg(text: str, open_paren: int) -> str:
+    """Text between ``text[open_paren]`` and its matching close paren."""
+    depth = 0
+    end = len(text)
+    for j in range(open_paren, len(text)):
+        c = text[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                end = j
+                break
+    return text[open_paren + 1 : end]
+
+
+def _canon_checked_vars(text: str) -> set[str]:
+    """Variables boundary-checked by a canonical-boundary probe hit.
+
+    The probe matched an ``if`` statement; the checked variable is the
+    subject of the separator-joined prefix or is_relative_to call inside
+    its condition.
+    """
+    out: set[str] = set()
+    for m in _CHECKED_VAR_RE.finditer(text):
+        method = m.group(2)
+        if method in ("startswith", "startsWith"):
+            arg = _balanced_arg(text, m.end() - 1)
+            if not ("sep" in arg or '"/"' in arg or "'/'" in arg):
+                continue
+        out.add(m.group(1))
+    return out
+
+
+def _manifest_dep_version(
+    target_root: Path | None, package: str
+) -> str | None:
+    """Exact installed version of ``package`` from target manifests.
+
+    Consults package-lock.json (resolved ``node_modules/<pkg>`` version)
+    and package.json (exact pins only; ranges prove nothing). Returns
+    None when no evidence exists. Cheap and offline: two JSON reads at
+    the target root, no registry contact.
+    """
+    import json as _json
+
+    if target_root is None:
+        return None
+    root = target_root if target_root.is_dir() else target_root.parent
+    lock = root / "package-lock.json"
+    if lock.is_file():
+        try:
+            data = _json.loads(lock.read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError):
+            data = {}
+        version = (
+            (data.get("packages") or {})
+            .get(f"node_modules/{package}", {})
+            .get("version")
+        )
+        if version is None:
+            version = (
+                (data.get("dependencies") or {}).get(package, {}).get("version")
+            )
+        if isinstance(version, str) and _EXACT_VERSION.match(version):
+            return version
+    manifest = root / "package.json"
+    if manifest.is_file():
+        try:
+            data = _json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError):
+            data = {}
+        for section in ("dependencies", "devDependencies"):
+            spec = (data.get(section) or {}).get(package)
+            if isinstance(spec, str) and _EXACT_VERSION.match(spec):
+                return spec
+    return None
+
+
+def _version_tuple(version: str) -> tuple[int, ...] | None:
+    m = _EXACT_VERSION.match(version)
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
+def _dependency_guard_note(
+    result: dict,
+    target_root: Path | None,
+    lines_cache: dict[str, list[str] | None],
+) -> dict | None:
+    """Dependency-guarded extractor note, or None to keep the P4.
+
+    Fires when a P4 finding's matched call is a known self-sanitizing
+    extractor method and the file references that package. Demotion is
+    conservative: a manifest pin *below* the extractor's minimum safe
+    version leaves the deterministic P4 untouched; no evidence and a
+    safe pin both produce a note, with the reason string saying which.
+    """
+    text = _hit_text(result, target_root, lines_cache)
+    m = _DEP_METHOD_RE.search(text)
+    if not m:
+        return None
+    package, minimum = _DEP_GUARDED_EXTRACTORS[m.group(1)]
+    file_lines = _file_lines(
+        result.get("path", ""), target_root, lines_cache
+    )
+    haystack = "\n".join(file_lines) if file_lines else text
+    if not _DEP_PKG_NEEDLES[package].search(haystack):
+        return None
+    loc = _loc(result)
+    version = _manifest_dep_version(target_root, package)
+    if version is not None:
+        vt = _version_tuple(version)
+        if vt is not None and vt < minimum:
+            # Evidence says the installed extractor predates the
+            # sanitizer: the member-slip risk is real, keep the P4.
+            return None
+        reason = (
+            f"dependency-guarded: {package} {version} "
+            f"(manifest pin) >= {'.'.join(map(str, minimum))} "
+            "sanitizes member names at extraction"
+        )
+        status = "confirmed"
+    else:
+        reason = (
+            f"dependency-guarded, verify version: {package}>="
+            f"{'.'.join(map(str, minimum))} sanitizes member names at "
+            "extraction; installed version not verified (no "
+            "package-lock/package.json evidence)"
+        )
+        status = "unverified"
+    return {
+        **loc,
+        "package": package,
+        "min_version": ".".join(map(str, minimum)),
+        "version": version,
+        "version_status": status,
+        "reason": reason,
+    }
 
 # Keywords and literals excluded from identifier extraction when binding
 # probe hits to sink arguments.
@@ -285,6 +480,11 @@ class _Site:
     no_guard_locations: list[dict] = field(default_factory=list)
     complete_guard_results: list[dict] = field(default_factory=list)
     validation_results: list[dict] = field(default_factory=list)
+    canon_guard_results: list[dict] = field(default_factory=list)
+    # P4 findings demoted because the extractor call is a documented
+    # self-sanitizing dependency API; each entry is the note dict from
+    # _dependency_guard_note.
+    dep_guards: list[dict] = field(default_factory=list)
     resolution: str = ""
     test_path: bool = False
 
@@ -298,7 +498,11 @@ class _Site:
 
     def to_record(self) -> dict:
         guards: list[dict] = []
-        for r in self.complete_guard_results + self.validation_results:
+        for r in (
+            self.complete_guard_results
+            + self.validation_results
+            + self.canon_guard_results
+        ):
             loc = _loc(r)
             if loc not in guards:
                 guards.append(loc)
@@ -315,6 +519,7 @@ class _Site:
             },
             "sinks": self.sinks,
             "guard_locations": guards,
+            "dependency_guards": self.dep_guards,
             "test_path": self.test_path,
         }
 
@@ -333,13 +538,16 @@ def classify_results(
     """
     root = Path(target_root) if target_root is not None else None
     results = scan_data.get("results") or []
+    lines_cache: dict[str, list[str] | None] = {}
 
     entries: dict[str, list[dict]] = {}
     sinks: dict[str, list[dict]] = {}
     complete_hits: dict[str, list[dict]] = {}
     validation_hits: dict[str, list[dict]] = {}
+    canon_hits: dict[str, list[dict]] = {}
     checklist_hits: list[dict] = []
     class_findings: list[tuple[str, dict]] = []
+    dep_findings: list[dict] = []
 
     for r in results:
         meta = (r.get("extra") or {}).get("metadata") or {}
@@ -354,10 +562,18 @@ def classify_results(
             complete_hits.setdefault(path, []).append(r)
         elif role == ROLE_INTERVENING:
             validation_hits.setdefault(path, []).append(r)
+        elif role == ROLE_CANON_BOUNDARY:
+            canon_hits.setdefault(path, []).append(r)
         elif role == ROLE_CHECKLIST or meta.get("tier") == "checklist":
             checklist_hits.append(r)
         elif guard_class:
-            class_findings.append((str(guard_class), r))
+            note = None
+            if str(guard_class) == "P4":
+                note = _dependency_guard_note(r, root, lines_cache)
+            if note is not None:
+                dep_findings.append((note, r))
+            else:
+                class_findings.append((str(guard_class), r))
         # Results with neither probe_role nor guard_class are foreign to
         # the pack and ignored by the pipeline.
 
@@ -365,7 +581,6 @@ def classify_results(
     # class findings whose lines fall inside the extent.
     sites: dict[tuple[str, int, int], _Site] = {}
     sites_by_path: dict[str, list[_Site]] = {}
-    lines_cache: dict[str, list[str] | None] = {}
 
     def site_for(path: str, line: int) -> _Site | None:
         best: _Site | None = None
@@ -421,6 +636,15 @@ def classify_results(
             ]:
                 site.validation_results.append(v)
 
+    for path, cs in canon_hits.items():
+        for c in cs:
+            loc = _loc(c)
+            site = site_for(path, loc["line"])
+            if site is not None and loc not in [
+                _loc(r) for r in site.canon_guard_results
+            ]:
+                site.canon_guard_results.append(c)
+
     for cls, f in class_findings:
         loc = _loc(f)
         site = site_for(f.get("path", ""), loc["line"])
@@ -452,6 +676,25 @@ def classify_results(
             if loc not in site.class_locations[cls]:
                 site.class_locations[cls].append(loc)
 
+    for note, f in dep_findings:
+        loc = _loc(f)
+        site = site_for(f.get("path", ""), loc["line"])
+        if site is None:
+            # Same don't-go-silent rule as orphan class findings: a
+            # demoted dependency-guarded sink outside every recognized
+            # entry extent gets a synthetic site so the note is visible.
+            start, end = _extent(f)
+            site = _Site(
+                path=f.get("path", ""),
+                start_line=start,
+                end_line=end,
+                label=_function_hint(f, root, lines_cache),
+                test_path=is_test_path(f.get("path", "")),
+            )
+            sites[site.key] = site
+            sites_by_path.setdefault(site.path, []).append(site)
+        site.dep_guards.append(note)
+
     # Layered resolution per site (precedence: weak class > bound
     # recognized-complete > bound unrecognized-guard > raw no-guard).
     # Sites with a sink but no tainted source-input flow are recorded,
@@ -465,6 +708,7 @@ def classify_results(
             not site.sinks
             and not site.class_locations
             and not site.has_raw_no_guard
+            and not site.dep_guards
         ):
             # Handler with no enumerated sink: a surface marker only.
             site.resolution = RESOLUTION_HANDLER_NO_SINK
@@ -485,10 +729,33 @@ def classify_results(
                 for r in results
             )
 
+        def canon_bound() -> bool:
+            # Strict binding for canonical-boundary probes: the
+            # *checked* variable (not just any identifier in the `if`)
+            # must appear in a sink's first argument, so a guard on an
+            # unrelated value cannot launder the site.
+            if not sink_args:
+                return False
+            for r in site.canon_guard_results:
+                checked = _canon_checked_vars(
+                    _hit_text(r, root, lines_cache)
+                )
+                if checked & sink_args:
+                    return True
+            return False
+
         if site.class_locations:
-            site.resolution = RESOLUTION_DETERMINISTIC
+            if set(site.class_locations) <= _CANON_BOUNDARY_CLASSES and (
+                canon_bound()
+            ):
+                # In-function canonicalize + boundary-check guard: the
+                # join/member classes at this site name exactly the gap
+                # this shape closes.
+                site.resolution = RESOLUTION_RECOGNIZED_COMPLETE
+            else:
+                site.resolution = RESOLUTION_DETERMINISTIC
         elif site.has_raw_no_guard:
-            if bound(site.complete_guard_results):
+            if bound(site.complete_guard_results) or canon_bound():
                 site.resolution = RESOLUTION_RECOGNIZED_COMPLETE
             elif bound(site.validation_results):
                 site.resolution = RESOLUTION_UNRECOGNIZED
@@ -497,11 +764,16 @@ def classify_results(
                     dict(s) for s in site.no_guard_locations
                 ]
                 site.resolution = RESOLUTION_DETERMINISTIC
-        elif site.complete_guard_results:
+        elif site.complete_guard_results or site.canon_guard_results:
             # No raw no-guard finding means the by-side-effect sanitizer
             # cleaned the tainted value itself; the guard vocabulary was
             # seen at this site.
             site.resolution = RESOLUTION_RECOGNIZED_COMPLETE
+        elif site.dep_guards:
+            # Every deterministic class was demoted to a dependency-guard
+            # note: "dependency-guarded, verify version" goes to manual
+            # review, never silent.
+            site.resolution = RESOLUTION_UNRECOGNIZED
         else:
             site.resolution = RESOLUTION_NO_FLOW
 

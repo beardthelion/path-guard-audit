@@ -243,6 +243,78 @@ vocabulary above is intentionally narrow: anything the vocabulary misses
 must stay tainted so the site can be classified instead of silently
 passed.
 
+## Canonical-boundary probe (in-function canonicalize + boundary check)
+
+The name vocabulary cannot see guards written inline, which are common in
+real extract loops (`target = os.path.realpath(join(dest, member)); if
+not target.startswith(realpath(dest) + os.sep): continue`). A dedicated
+site probe (`probe_role: canonical_boundary_guard`) recognizes the pair
+structurally instead of lexically:
+
+- a variable assigned from a canonicalizing call
+  (`os.path.realpath`/`abspath`/`normpath`, bare `realpath`/`abspath`/
+  `normpath`, `<expr>.resolve()`; TypeScript `path.resolve`,
+  `fs.realpathSync`, `realpathSync`, `path.normalize`), and
+- inside the same function, an `if` with a reject arm
+  (`raise`/`return`/`continue`/`break`; TypeScript `throw`/`return`/
+  `continue`) whose condition boundary-checks that variable:
+  `v.startswith(root + os.sep)`-with-separator (also `sep`,
+  `$S.sep`, `"/"` literals) or `v.is_relative_to(root)`;
+  TypeScript `v.startsWith(root + path.sep)`.
+
+The metavariable for the checked variable must unify across both
+clauses, so a check on a value that was never canonicalized cannot
+match. At resolution time `classify.py` then requires the *checked
+variable* (parsed out of the probe's condition, not any identifier in
+the `if`) to appear in a sink call's first argument. The stricter
+binding exists because the probe already proves the check is a real
+boundary check; the only laundering left is checking the wrong path.
+
+A bound canonical-boundary guard clears a site whose weak classes are
+all join/member classes (P2, P3, P4): those classes name exactly the
+gap the check closes. It also resolves a raw-P0 site
+recognized-complete, same as a bound complete-guard call. Sites
+carrying P1/P7/P8 keep their class: canonicalize + boundary does not
+cure a strip-only shape, a decoded-input source, or an env-flag
+bypass.
+
+Deliberate non-matches, all still deterministic: `startswith(root)`
+without a separator join (`/srv/allowed_evil` passes `/srv/allowed`), a
+`startswith`/`startsWith` on an un-canonicalized variable, a canonical
+call with no boundary check, a boundary condition with no reject arm,
+and a boundary check on a variable the sink does not consume.
+
+## Dependency-guarded extractors
+
+Some bulk-extract APIs sanitize member names inside the dependency,
+which semgrep cannot see. `classify.py` keeps a list of extractor
+methods with a documented minimum safe version:
+
+- adm-zip `extractAllTo`, `extractAllToAsync`, `extractEntryTo`,
+  `extractEntryToAsync`: safe at >= 0.6.1, where `Utils.canonical` +
+  `Utils.sanitize` confine every entry name to the target root and
+  `filetools.assertPathSafe` rejects writes through pre-existing
+  in-root symlinks (earlier versions sanitize names but followed
+  destination symlinks; pre-0.5.10 lacked the name check entirely).
+
+When a P4 finding's matched call is one of these methods *and* the file
+references the package (`adm-zip` import/`AdmZip`), the finding is
+demoted out of the deterministic class set into a dependency-guard
+note attached to the site:
+
+- exact pin >= the minimum in `package-lock.json` (`node_modules/<pkg>`)
+  or `package.json` (exact `x.y.z` only; `^`/`~`/ranges are not
+  evidence) at the target root: note is `confirmed` with the version;
+- no manifest or no exact pin: note is `unverified`, reason text is
+  "dependency-guarded ... verify version";
+- exact pin *below* the minimum: the P4 stays deterministic.
+
+A site whose classes were all demoted resolves `unrecognized_guard`:
+manual review, never recognized-complete and never silent. Demotion is
+a statement about the call-site shape; the dependency version decides
+exploitability and belongs to the reviewer when the manifest cannot
+prove it.
+
 ## Analysis ceiling (what these rules cannot see)
 
 Semgrep CE taint is intra-function. Known blind spots, all documented

@@ -2,6 +2,7 @@
 
 declare const app: any;
 declare const server: any;
+declare const path: any;
 declare const fs: any;
 
 // ruleid: path-guard-audit-probe-handler-source-typescript
@@ -48,4 +49,55 @@ export function noSurface(x: number) {
   // ok: path-guard-audit-probe-complete-guard-typescript
   // ok: path-guard-audit-probe-intervening-validation-typescript
   return x * 2;
+}
+
+// ruleid: path-guard-audit-probe-handler-source-typescript
+export function canonicalBoundaryGuarded(dest: string, members: string[]) {
+  for (const m of members) {
+    const target = path.resolve(dest, m);
+    // ruleid: path-guard-audit-probe-canonical-boundary-typescript
+    if (!target.startsWith(path.resolve(dest) + path.sep)) {
+      continue;
+    }
+    // ruleid: path-guard-audit-probe-path-sink-typescript
+    fs.writeFileSync(target, m);
+  }
+}
+
+// ruleid: path-guard-audit-probe-handler-source-typescript
+export function startsWithWithoutSeparator(dest: string, members: string[]) {
+  for (const m of members) {
+    const target = path.resolve(dest, m);
+    // ok: path-guard-audit-probe-canonical-boundary-typescript
+    if (!target.startsWith(dest)) {
+      continue;
+    }
+    // ruleid: path-guard-audit-probe-path-sink-typescript
+    fs.writeFileSync(target, m);
+  }
+}
+
+// ruleid: path-guard-audit-probe-handler-source-typescript
+export function boundaryCheckOnUncanonicalized(dest: string, members: string[]) {
+  for (const m of members) {
+    const target = path.join(dest, m);
+    // ok: path-guard-audit-probe-canonical-boundary-typescript
+    if (!target.startsWith(dest + path.sep)) {
+      continue;
+    }
+    // ruleid: path-guard-audit-probe-path-sink-typescript
+    fs.writeFileSync(target, m);
+  }
+}
+
+// ruleid: path-guard-audit-probe-handler-source-typescript
+export function canonicalBoundaryNoReject(dest: string, members: string[]) {
+  for (const m of members) {
+    const target = path.resolve(dest, m);
+    const inside = target.startsWith(dest + path.sep);
+    if (inside) {
+      // ruleid: path-guard-audit-probe-path-sink-typescript
+      fs.writeFileSync(target, m);
+    }
+  }
 }

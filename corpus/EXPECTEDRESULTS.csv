@@ -16,3 +16,4 @@ p1p2p6-moderntar-path:vulnerable,p1p2p6-moderntar-path,ayuhito/modern-tar,c2ff3d
 checklist-mcp-filesystem:entrypoints,checklist-mcp-filesystem,modelcontextprotocol/servers,956d36f8a148908b2e2394669ef5ae1f1230c9e9,corpus/checklist-mcp-filesystem/vulnerable/src/filesystem/index.ts,typescript,P9,checklist,vendored,yes
 gptme-file-tools:read,gptme-file-tools,gptme/gptme,292f8a5be5fba2d5ad1a0c616811fffd57c26001,corpus/gptme-file-tools/vulnerable/gptme/tools/read.py,python,P0;P1,deterministic,vendored,yes
 gptme-file-tools:save,gptme-file-tools,gptme/gptme,292f8a5be5fba2d5ad1a0c616811fffd57c26001,corpus/gptme-file-tools/vulnerable/gptme/tools/save.py,python,P0;P1;P2,deterministic,vendored,yes
+crewai-remote-template-extract:guarded,crewai-remote-template-extract,crewAIInc/crewAI,6b93fa0e25a926215ca7bb52a95d4db7d9d7262d,corpus/crewai-remote-template-extract/guarded/lib/cli/src/crewai_cli/remote_template/main.py,python,P1;P2;P3,deterministic,vendored,yes

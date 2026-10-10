@@ -334,3 +334,153 @@ rules:
           - metavariable-regex:
               metavariable: $COND
               regex: '(?i).*(isRelative|is_?relative|startsWith|endsWith|includes|include|within|allow|valid|resolve|realpath|normalize|absolut|canonic|sanitiz|escape|traversal|outside|inside|contain|prefix|basename|member|link|isFile|exists).*'
+
+  - id: path-guard-audit-probe-canonical-boundary-typescript
+    message: >-
+      Site probe: in-function canonical-boundary guard. The same
+      function assigns a variable from a canonicalizing call
+      (path.resolve, fs.realpathSync, or bare realpathSync) and, inside
+      an `if` that rejects (throw / return / continue), boundary-checks
+      that variable with a separator-joined prefix check:
+      `v.startsWith(root + path.sep)`. The metavariable $V must unify,
+      so a check on a value that was never canonicalized does not match.
+      classify.py then requires the checked variable to appear in a sink
+      call's first argument before resolving the site
+      recognized-complete, so a check on an unrelated value cannot
+      launder it.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: canonical_boundary_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Same non-matches as the Python probe: startsWith(root) without a
+    # separator join, a check on an un-canonicalized variable, and a
+    # boundary condition with no reject arm all stay weak/deterministic.
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              function $F(...) {
+                ...
+              }
+          - pattern-inside: |
+              async function $F(...) {
+                ...
+              }
+          - pattern-inside: |
+              $F = (...) => {
+                ...
+              }
+          - pattern-inside: |
+              $F = async (...) => {
+                ...
+              }
+          - pattern-inside: |
+              const $F = (...) => {
+                ...
+              }
+          - pattern-inside: |
+              const $F = async (...) => {
+                ...
+              }
+      - pattern-either:
+          - pattern-inside: |
+              function $F(...) {
+                ...
+                $V = path.resolve(...)
+                ...
+              }
+          - pattern-inside: |
+              function $F(...) {
+                ...
+                $V = fs.realpathSync(...)
+                ...
+              }
+          - pattern-inside: |
+              function $F(...) {
+                ...
+                $V = realpathSync(...)
+                ...
+              }
+          - pattern-inside: |
+              function $F(...) {
+                ...
+                $V = path.normalize(...)
+                ...
+              }
+          - pattern-inside: |
+              async function $F(...) {
+                ...
+                $V = path.resolve(...)
+                ...
+              }
+          - pattern-inside: |
+              async function $F(...) {
+                ...
+                $V = fs.realpathSync(...)
+                ...
+              }
+          - pattern-inside: |
+              async function $F(...) {
+                ...
+                $V = realpathSync(...)
+                ...
+              }
+          - pattern-inside: |
+              async function $F(...) {
+                ...
+                $V = path.normalize(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = (...) => {
+                ...
+                $V = path.resolve(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = (...) => {
+                ...
+                $V = fs.realpathSync(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = async (...) => {
+                ...
+                $V = path.resolve(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = async (...) => {
+                ...
+                $V = fs.realpathSync(...)
+                ...
+              }
+      - pattern-either:
+          - pattern: |
+              if ($C) {
+                ...
+                throw ...
+                ...
+              }
+          - pattern: |
+              if ($C) {
+                ...
+                return ...
+                ...
+              }
+          - pattern: |
+              if ($C) {
+                ...
+                continue
+                ...
+              }
+      - metavariable-pattern:
+          metavariable: $C
+          pattern-either:
+            - pattern: <... $V.startsWith($R + path.sep) ...>
+            - pattern: <... $V.startsWith($R + sep) ...>
+            - pattern: <... $V.startsWith($R + $S.sep) ...>
+            - pattern: <... $V.startsWith($R + "/") ...>
+            - pattern: <... $V.startsWith($R + '/') ...>

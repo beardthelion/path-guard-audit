@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+Precision fixes for two false-positive classes found while triaging
+real-world smoke hits:
+
+- Canonical-boundary guard recognition. A new site probe
+  (`canonical_boundary_guard`) recognizes the in-function pair of a
+  canonicalizing assignment (`os.path.realpath`/`abspath`/`normpath`,
+  `<expr>.resolve()`; TypeScript `path.resolve`, `fs.realpathSync`,
+  `path.normalize`) and a reject-arm `if` that boundary-checks the same
+  variable (`v.startswith(root + os.sep)`-with-separator,
+  `v.is_relative_to(root)`; `v.startsWith(root + path.sep)`). Resolution
+  requires the checked variable to reach a sink's first argument, and
+  only join/member classes (P2, P3, P4) clear; other classes stay
+  deterministic. Near-misses still reported: `startswith(root)` without
+  a separator join, checks on un-canonicalized values, conditions with
+  no reject arm, and checks on a variable the sink does not consume.
+  Fixes the crewAI `remote_template._extract_zip` P4 false positive; the
+  site now resolves recognized-complete.
+- Dependency-guarded extractors. `adm-zip` `extractAllTo`,
+  `extractAllToAsync`, `extractEntryTo`, `extractEntryToAsync` P4
+  findings demote to a `dependency-guarded` note (site resolves
+  `unrecognized_guard`, never silent) when the file references the
+  package, because adm-zip >= 0.6.1 sanitizes member names and rejects
+  writes through in-root symlinks. `package-lock.json`/`package.json`
+  exact pins are consulted as offline version evidence: >= the minimum
+  records `confirmed`, below the minimum keeps the deterministic P4,
+  and no evidence leaves `unverified` with reason
+  "dependency-guarded, verify version". Fixes the coc-rust-analyzer
+  `downloadServer` P4 false positive; the corpus row keeps its
+  vulnerable call-site shape pin with an `accepted_misses` note.
+
 ## 0.1.0 (2026-10-10)
 
 Initial release.

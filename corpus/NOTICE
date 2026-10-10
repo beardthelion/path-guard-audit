@@ -6,10 +6,11 @@ summarizes the vendored instances; everything under corpus/<instance_id>/
 is a verbatim source snapshot at the pinned SHA, redistributed under the
 upstream license named here.
 
-- crewAIInc/crewAI (crewai-tools package)
+- crewAIInc/crewAI (crewai-tools and crewai-cli packages)
   License: MIT
   Instances: p0-crewai-file-read-tool (vulnerable and guarded states),
-             clean-crewai-file-writer-tool, p8-crewai-unsafe-paths-env
+             clean-crewai-file-writer-tool, p8-crewai-unsafe-paths-env,
+             crewai-remote-template-extract
 
 - TransformerOptimus/SuperAGI
   License: MIT
