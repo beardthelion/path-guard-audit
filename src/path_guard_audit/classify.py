@@ -78,16 +78,46 @@ _DEP_GUARDED_EXTRACTORS = {
     # in-root symlinks). Older versions sanitize names but followed
     # destination symlinks (CVE-2026-76845 / GHSA-vwc7-r8mq-g2x9), and
     # pre-0.5.10 lacked even the name check (GHSL-2020-198).
-    "extractAllTo": ("adm-zip", (0, 6, 1)),
-    "extractAllToAsync": ("adm-zip", (0, 6, 1)),
-    "extractEntryTo": ("adm-zip", (0, 6, 1)),
-    "extractEntryToAsync": ("adm-zip", (0, 6, 1)),
+    "adm-zip": {
+        "min": (0, 6, 1),
+        "call": re.compile(
+            r"\.(?:extractAllTo|extractAllToAsync|extractEntryTo|"
+            r"extractEntryToAsync)\s*\("
+        ),
+        "needle": re.compile(r"adm-zip|AdmZip"),
+    },
+    # extract-zip >= 2.0.1 resolves each entry's dest dir to a realpath
+    # and throws "Out of bound path" when it escapes the target root
+    # (CVE-2019-10750 fix). The conventional import name is matched:
+    # extractZip(...) / extractZipAsync(...). An alias import
+    # (import unzip from 'extract-zip') keeps the deterministic P4.
+    # The 1.7.x line also patched the CVE but a single minimum is
+    # declared, so pins below 2.0.1 keep the P4 (conservative).
+    "extract-zip": {
+        "min": (2, 0, 1),
+        "call": re.compile(r"\bextractZip(?:Async)?\s*\("),
+        "needle": re.compile(r"extract-zip|extractZip"),
+    },
+    # node-tar: preservePaths defaults to false on extract, so member
+    # names are confined to the target root (leading /, drive letters,
+    # and .. components are stripped). The 6.1.2 minimum is the first
+    # release with the complete 2021 path-safety fixes
+    # (CVE-2021-32803, CVE-2021-32804); they were backported to 5.0.7
+    # and 4.4.15, but a single minimum is declared, so those pins keep
+    # the P4 (conservative). The receiver must look like the tar
+    # module (tar.x, tar.extract, tarFile.extract, ...) so an unrelated
+    # x/extract call in a tar-importing file is not demoted.
+    "tar": {
+        "min": (6, 1, 2),
+        "call": re.compile(
+            r"\b(\w[\w$]*)\.(?:x|extract|extractSync)\s*\("
+        ),
+        "receiver": re.compile(r"(?i)tar"),
+        "needle": re.compile(
+            r"from\s+['\"]tar['\"]|require\(\s*['\"]tar['\"]"
+        ),
+    },
 }
-
-_DEP_METHOD_RE = re.compile(
-    r"\.(" + "|".join(sorted(_DEP_GUARDED_EXTRACTORS)) + r")\s*\("
-)
-_DEP_PKG_NEEDLES = {"adm-zip": re.compile(r"adm-zip|AdmZip")}
 # Exact-pins only count as version evidence; a range (^, ~, >=) does not
 # prove what got installed.
 _EXACT_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -245,15 +275,24 @@ def _dependency_guard_note(
     safe pin both produce a note, with the reason string saying which.
     """
     text = _hit_text(result, target_root, lines_cache)
-    m = _DEP_METHOD_RE.search(text)
-    if not m:
-        return None
-    package, minimum = _DEP_GUARDED_EXTRACTORS[m.group(1)]
     file_lines = _file_lines(
         result.get("path", ""), target_root, lines_cache
     )
     haystack = "\n".join(file_lines) if file_lines else text
-    if not _DEP_PKG_NEEDLES[package].search(haystack):
+    package = None
+    minimum = None
+    for pkg, spec in _DEP_GUARDED_EXTRACTORS.items():
+        m = spec["call"].search(text)
+        if not m:
+            continue
+        receiver = spec.get("receiver")
+        if receiver is not None and not receiver.search(m.group(1)):
+            continue
+        if not spec["needle"].search(haystack):
+            continue
+        package, minimum = pkg, spec["min"]
+        break
+    if package is None:
         return None
     loc = _loc(result)
     version = _manifest_dep_version(target_root, package)

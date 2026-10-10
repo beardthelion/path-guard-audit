@@ -907,3 +907,154 @@ def test_non_admzip_extractall_stays_p4(tmp_path):
     [site] = result["sites"]
     assert site["resolution"] == "deterministic"
     assert site["classes"] == ["P4"]
+
+
+
+def test_dependency_guarded_extract_zip_bare_call(tmp_path):
+    (tmp_path / "dl.ts").write_text(
+        "import extractZip from 'extract-zip';\n"
+        "export async function dl(dest: string, buf: Buffer) {\n"
+        "  await extractZip('/tmp/dl.zip', { dir: dest });\n"
+        "}\n"
+    )
+    (tmp_path / "package-lock.json").write_text(
+        '{"packages": {"node_modules/extract-zip": {"version": "2.0.1"}}}'
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "dl.ts",
+                    3,
+                    "  await extractZip('/tmp/dl.zip', { dir: dest });",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.ts"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    [note] = site["dependency_guards"]
+    assert note["package"] == "extract-zip"
+    assert note["version_status"] == "confirmed"
+
+
+def test_dependency_guarded_tar_extract(tmp_path):
+    (tmp_path / "dl.mjs").write_text(
+        "import * as tar from 'tar';\n"
+        "export async function dl(dest) {\n"
+        "  await tar.extract({ file: '/tmp/dl.tgz', cwd: dest });\n"
+        "}\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "dl.mjs",
+                    3,
+                    "  await tar.extract({ file: '/tmp/dl.tgz', cwd: dest });",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.mjs"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    [note] = site["dependency_guards"]
+    assert note["package"] == "tar"
+    assert note["version_status"] == "unverified"
+
+
+def test_dependency_guarded_tar_below_min_stays_p4(tmp_path):
+    (tmp_path / "dl.mjs").write_text(
+        "import * as tar from 'tar';\n"
+        "export async function dl(dest) {\n"
+        "  await tar.extract({ file: '/tmp/dl.tgz', cwd: dest });\n"
+        "}\n"
+    )
+    (tmp_path / "package-lock.json").write_text(
+        '{"packages": {"node_modules/tar": {"version": "6.1.0"}}}'
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "dl.mjs",
+                    3,
+                    "  await tar.extract({ file: '/tmp/dl.tgz', cwd: dest });",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.mjs"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]
+
+
+def test_extract_zip_alias_import_stays_p4(tmp_path):
+    # import unzip from 'extract-zip': the conventional import name is
+    # not on the call, so nothing is demoted.
+    (tmp_path / "dl.ts").write_text(
+        "import unzip from 'extract-zip';\n"
+        "export async function dl(dest: string, buf: Buffer) {\n"
+        "  await unzip('/tmp/dl.zip', { dir: dest });\n"
+        "}\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "dl.ts",
+                    3,
+                    "  await unzip('/tmp/dl.zip', { dir: dest });",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.ts"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]
+
+
+def test_non_tar_receiver_stays_p4(tmp_path):
+    # File imports tar, but the extract call is on an unrelated receiver:
+    # the tar demotion must not smuggle it.
+    (tmp_path / "dl.mjs").write_text(
+        "import * as tar from 'tar';\n"
+        "import zipfile from 'weird-zip-lib';\n"
+        "export async function dl(dest) {\n"
+        "  await zipfile.extract('/tmp/dl.zip', dest);\n"
+        "}\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.ts.p4",
+                    "dl.mjs",
+                    4,
+                    "  await zipfile.extract('/tmp/dl.zip', dest);",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.mjs"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]

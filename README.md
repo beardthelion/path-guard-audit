@@ -160,15 +160,15 @@ one that is provably free of path handling.
 - Archive member checks enumerate Python `zipfile`/`tarfile`/
   `shutil.unpack_archive` and TypeScript `adm-zip`/`tar`/`decompress`/
   `unzipper` shapes. Bulk extractors whose member-name checks live
-  inside the dependency are handled conservatively: an `adm-zip`
-  `extractAllTo`/`extractAllToAsync`/`extractEntryTo`/
-  `extractEntryToAsync` P4 demotes to a `dependency-guarded` note
-  (the site resolves `unrecognized_guard`, never silent) because
-  adm-zip >= 0.6.1 canonicalizes and sanitizes member names and
-  rejects writes through in-root symlinks. `package-lock.json` /
+  inside the dependency are handled conservatively: `adm-zip`
+  `extractAllTo`-family (>= 0.6.1), `extract-zip`'s
+  `extractZip`/`extractZipAsync` (>= 2.0.1), and node-tar
+  `tar.x`/`tar.extract`/`tar.extractSync` on a tar-ish receiver
+  (>= 6.1.2) demote to a `dependency-guarded` note
+  (the site resolves `unrecognized_guard`, never silent). `package-lock.json` /
   `package.json` at the target root are consulted offline as version
-  evidence: an exact pin >= 0.6.1 is recorded as `confirmed`, a pin
-  below 0.6.1 keeps the deterministic P4, and no evidence leaves the
+  evidence: an exact pin >= the minimum is recorded as `confirmed`, a pin
+  below keeps the deterministic P4, and no evidence leaves the
   note `unverified` ("verify version"). Ranges do not count as
   evidence; only exact pins do. A demoted finding is a statement about
   the call-site shape, not about exploitability: the installed

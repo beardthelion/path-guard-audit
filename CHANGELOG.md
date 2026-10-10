@@ -24,7 +24,12 @@ real-world smoke hits:
   findings demote to a `dependency-guarded` note (site resolves
   `unrecognized_guard`, never silent) when the file references the
   package, because adm-zip >= 0.6.1 sanitizes member names and rejects
-  writes through in-root symlinks. `package-lock.json`/`package.json`
+  writes through in-root symlinks. The same mechanism covers
+  `extract-zip`'s `extractZip`/`extractZipAsync` (>= 2.0.1, out-of-root
+  realpath check per entry) and node-tar `tar.x`/`tar.extract`/
+  `tar.extractSync` on a tar-ish receiver (>= 6.1.2, default member-name
+  confinement plus the 2021 path-safety fixes).
+  `package-lock.json`/`package.json`
   exact pins are consulted as offline version evidence: >= the minimum
   records `confirmed`, below the minimum keeps the deterministic P4,
   and no evidence leaves `unverified` with reason

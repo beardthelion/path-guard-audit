@@ -296,9 +296,22 @@ methods with a documented minimum safe version:
   `filetools.assertPathSafe` rejects writes through pre-existing
   in-root symlinks (earlier versions sanitize names but followed
   destination symlinks; pre-0.5.10 lacked the name check entirely).
+- extract-zip `extractZip`/`extractZipAsync` (the conventional import
+  name): safe at >= 2.0.1, which realpaths each entry's destination
+  directory and throws on out-of-root writes (CVE-2019-10750 fix).
+  The 1.7.x line was also patched, but a single minimum is declared, so
+  pins below 2.0.1 keep the P4.
+- node-tar `tar.x`/`tar.extract`/`tar.extractSync` on a tar-ish receiver:
+  safe at >= 6.1.2 (the complete 2021 path-safety fixes,
+  CVE-2021-32803/32804; `preservePaths: false` confines member names by
+  default). The fixes were backported to 5.0.7/4.4.15, but a single
+  minimum is declared, so those pins keep the P4. The call receiver
+  must contain `tar` (`tar.x`, `tarFile.extract`, ...) so an unrelated
+  `x`/`extract` call in a tar-importing file is not demoted.
 
 When a P4 finding's matched call is one of these methods *and* the file
-references the package (`adm-zip` import/`AdmZip`), the finding is
+references the package (import/require name or the conventional call
+name), the finding is
 demoted out of the deterministic class set into a dependency-guard
 note attached to the site:
 
