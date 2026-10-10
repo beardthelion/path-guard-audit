@@ -1,0 +1,58 @@
+{
+  "instance_id": "p0-crewai-file-read-tool",
+  "repo": "crewAIInc/crewAI",
+  "repo_url": "https://github.com/crewAIInc/crewAI",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "a5df7c798c0db34f3648870db497fe39412a09f4",
+      "files": [
+        {
+          "upstream_path": "lib/crewai-tools/src/crewai_tools/tools/file_read_tool/file_read_tool.py",
+          "corpus_path": "corpus/p0-crewai-file-read-tool/vulnerable/lib/crewai-tools/src/crewai_tools/tools/file_read_tool/file_read_tool.py",
+          "labeled_lines": [
+            66,
+            82
+          ],
+          "role": "sink"
+        }
+      ]
+    },
+    "guarded": {
+      "sha": "6b93fa0e25a926215ca7bb52a95d4db7d9d7262d",
+      "files": [
+        {
+          "upstream_path": "lib/crewai-tools/src/crewai_tools/tools/file_read_tool/file_read_tool.py",
+          "corpus_path": "corpus/p0-crewai-file-read-tool/guarded/lib/crewai-tools/src/crewai_tools/tools/file_read_tool/file_read_tool.py",
+          "labeled_lines": [
+            174,
+            205
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P0"
+    ],
+    "guarded": [
+      "CLEAN"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/crewAIInc/crewAI/pull/5315",
+      "https://github.com/crewAIInc/crewAI/commit/868416bfe011e142a8cdf25cae9652306eeb8fa6"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Pre-fix FileReadTool._run opens file_path with no guard at all; PR #5315 added the path-traversal protections this instance predates.",
+  "last_verified": "2026-10-10"
+}

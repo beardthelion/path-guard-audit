@@ -1,0 +1,182 @@
+rules:
+  # Checklist-tier candidate enumerators for the structural classes.
+  # These rules emit candidate sites to verify manually; they never
+  # emit a verdict. classify.py turns each hit into a checklist item and
+  # only prints the checklist when a path-relevant surface was detected.
+  - id: path-guard-audit-checklist-p5-python
+    message: >-
+      P5 checklist candidate: link-shaped archive member or filesystem
+      link call. Verify the extract/open path cannot follow a symlink or
+      hardlink out of the intended root (link targets need the same
+      boundary check as member names).
+    severity: INFO
+    languages: [python]
+    metadata:
+      guard_class: P5
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        link following: member link entries and os.symlink/os.link calls
+        must be rejected or re-validated against the extract root
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    # Enumerates link operations and archive member link-type checks.
+    # Search mode cannot express "extract follows links out of root", so
+    # every link-shaped site is a candidate.
+    pattern-either:
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(symlink|symlink_to|link|link_to|hardlink|hardlink_to|readlink|is_symlink|issym|islnk|isdev)$'
+      - patterns:
+          - pattern: os.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(symlink|link|readlink)$'
+      - patterns:
+          - pattern: $X.linkname
+      - patterns:
+          - pattern: $X.$A
+          - metavariable-regex:
+              metavariable: $A
+              regex: '^(external_attr|linkname|issym|islnk)$'
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(issym|islnk|isdev|is_hardlink)$'
+      - patterns:
+          - pattern-either:
+              - pattern: tarfile.SYMTYPE
+              - pattern: tarfile.LNKTYPE
+              - pattern: stat.S_ISLNK(...)
+      - pattern: shutil.unpack_archive(...)
+
+  - id: path-guard-audit-checklist-p9-python
+    message: >-
+      P9 checklist candidate: registered entry point. Verify every
+      filesystem sink reachable from this entry point goes through a
+      complete guard, and that no second entry point reaches the same
+      sinks unguarded.
+    severity: INFO
+    languages: [python]
+    metadata:
+      guard_class: P9
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        guard coverage across entry points: every path from this entry
+        point to a filesystem sink shares the same complete guard
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    # Registered entry points only (decorated routes and tool entries,
+    # dispatch methods, Tool-class entry methods). Plain path-parameter
+    # functions are still site extents for the layered resolution but are
+    # deliberately not enumerated here: a "verify every entry" checklist
+    # listing every `def f(path)` in a repo would be noise.
+    pattern-either:
+      - patterns:
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt|route|api_route|get|post|put|delete|patch|head|options|websocket|add_url_rule|api_view|action|command|expose)$'
+          - pattern-either:
+              - pattern: |
+                  @$DECO(...)
+                  def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO(...)
+                  async def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO
+                  def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO
+                  async def $F(...):
+                    ...
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  async def $M(..., $ARG, ...):
+                    ...
+              - pattern: |
+                  def $M(..., $ARG, ...):
+                    ...
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+      - patterns:
+          - pattern-inside: |
+              class $T(...):
+                ...
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - pattern-either:
+              - pattern: |
+                  async def $M(...):
+                    ...
+              - pattern: |
+                  def $M(...):
+                    ...
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+
+  - id: path-guard-audit-checklist-p10-python
+    message: >-
+      P10 checklist candidate: filesystem access touching a
+      credential-shaped path name (key/token/cookie/secret/pem/.ssh/
+      .aws/.env/passwd/id_rsa). Verify the base directory is
+      operator-fixed and cannot be steered by the caller.
+    severity: INFO
+    languages: [python]
+    metadata:
+      guard_class: P10
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        sensitive open: credential/key/cookie material paths must use an
+        operator-fixed base, never a caller-chosen one
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    # Sink calls whose matched text mentions credential-shaped path
+    # vocabulary. A candidate only; the reviewer decides whether the
+    # base is caller-influenced.
+    pattern-either:
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(read_text|read_bytes|open|load|loads|read|read_file)$'
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(cred|secret|key|token|cookie|session|auth|passwd|shadow|vault|wallet|keystore)[a-z_0-9.()]*'
+      # Bare/method sink calls whose path argument text reads as
+      # credential-shaped. Callee-gated so unrelated calls carrying a
+      # key-named value stay out.
+      - patterns:
+          - pattern: $F($P, ...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)((.*[._])?(open|read|read_?file|load|load_?file|send_?file|sendfile|send_?from_?directory|FileResponse|Path|copy|move|remove|unlink|extract|extractfile))$'
+          - metavariable-regex:
+              metavariable: $P
+              regex: '(?i).*(cred|secret|token|cookie|passwd|shadow|id_rsa|id_dsa|id_ecdsa|id_ed25519|known_hosts|authorized_keys|\.pem|\.key|\.p12|\.pfx|\.keystore|\.jks|\.env|\.ssh|\.aws|\.kube|\.docker|gnupg|gpg|cert|private_?key|apikey|api_?key|access_?token|refresh_?token|netrc|hgrc|git-credentials|pgpass|cookiejar|master\.key|credentials|secrets).*'
+      - patterns:
+          - pattern: $X.$M($P, ...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(read_text|read_bytes|write_text|write_bytes|open|read|load|copy|move|extract|extractfile)$'
+          - metavariable-regex:
+              metavariable: $P
+              regex: '(?i).*(cred|secret|token|cookie|passwd|shadow|id_rsa|id_dsa|id_ecdsa|id_ed25519|known_hosts|authorized_keys|\.pem|\.key|\.p12|\.pfx|\.keystore|\.jks|\.env|\.ssh|\.aws|\.kube|\.docker|gnupg|gpg|cert|private_?key|apikey|api_?key|access_?token|refresh_?token|netrc|hgrc|git-credentials|pgpass|cookiejar|master\.key|credentials|secrets).*'

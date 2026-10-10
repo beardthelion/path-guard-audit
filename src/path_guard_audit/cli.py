@@ -1,0 +1,129 @@
+"""path-guard-audit command line interface.
+
+`scan <path>` runs the semgrep rule pack over a local repository, resolves
+each filesystem-sink site in a repository against the P0-P10 taxonomy, and prints findings,
+then the manual-audit checklist, then the coverage summary. Exit
+codes: 2 operational failure, 1 when any deterministic finding or
+unrecognized-guard item is present, 0 otherwise.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from path_guard_audit import __version__
+from path_guard_audit import classify, corpus, report, runner
+
+
+def _cmd_scan(args: argparse.Namespace) -> int:
+    try:
+        run = runner.run_scan(args.path, timeout=args.timeout)
+    except runner.ScanError as exc:
+        print(f"path-guard-audit: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        result = classify.classify_results(
+            run.data,
+            target_ignore_files=run.target_ignore_files,
+            excluded_dirs=run.excluded_dirs,
+            target_root=run.target,
+        )
+    except Exception as exc:
+        print(
+            f"path-guard-audit: failed to classify semgrep output: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+    if args.json:
+        sys.stdout.write(
+            report.render_json(
+                result,
+                ruleset_version=__version__,
+                semgrep_version=run.semgrep_version,
+                target=str(run.target),
+            )
+        )
+    else:
+        sys.stdout.write(
+            report.render_text(
+                result,
+                ruleset_version=__version__,
+                semgrep_version=run.semgrep_version,
+                target=str(run.target),
+            )
+        )
+    return report.exit_code(result)
+
+
+def _cmd_corpus_validate(args: argparse.Namespace) -> int:
+    try:
+        rep = corpus.validate_corpus(args.corpus, timeout=args.timeout)
+    except (corpus.CorpusError, runner.ScanError) as exc:
+        print(f"path-guard-audit: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:
+        print(f"path-guard-audit: corpus validation failed: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        sys.stdout.write(corpus.render_json(rep, ruleset_version=__version__))
+    else:
+        sys.stdout.write(corpus.render_text(rep, ruleset_version=__version__))
+    return corpus.exit_code(rep)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="path-guard-audit",
+        description=(
+            "Classify filesystem path-guard completeness in Python and TypeScript codebases "
+            "(P0-P10 taxonomy)."
+        ),
+    )
+    parser.add_argument("--version", action="store_true", help="print version and exit")
+    sub = parser.add_subparsers(dest="command")
+
+    def positive_float(raw: str) -> float:
+        val = float(raw)
+        if val <= 0:
+            raise argparse.ArgumentTypeError(
+                f"--timeout must be positive seconds, got {raw!r}"
+            )
+        return val
+
+    def add_common(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument("--json", action="store_true", help="emit JSON output")
+        sub.add_argument(
+            "--timeout",
+            type=positive_float,
+            default=runner.DEFAULT_TIMEOUT,
+            help="per-file semgrep analysis timeout in seconds (default: %(default)s)",
+        )
+
+    scan = sub.add_parser("scan", help="scan a local repository path")
+    scan.add_argument("path", help="path to a cloned repository")
+    add_common(scan)
+
+    cv = sub.add_parser("corpus-validate", help="run rules against the labeled corpus")
+    cv.add_argument(
+        "--corpus",
+        default="corpus",
+        help="path to the corpus directory (default: corpus/)",
+    )
+    add_common(cv)
+
+    args = parser.parse_args(argv)
+    if args.version:
+        print(__version__)
+        return 0
+    if args.command == "scan":
+        return _cmd_scan(args)
+    if args.command == "corpus-validate":
+        return _cmd_corpus_validate(args)
+    parser.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

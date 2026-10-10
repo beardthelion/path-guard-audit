@@ -1,0 +1,43 @@
+{
+  "instance_id": "p1p2p6-moderntar-path",
+  "repo": "ayuhito/modern-tar",
+  "repo_url": "https://github.com/ayuhito/modern-tar",
+  "license_spdx": "MIT",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "c2ff3d0e4c6998a7abd1cedd37664984a18e84bf",
+      "files": [
+        {
+          "upstream_path": "src/fs/path.ts",
+          "corpus_path": "corpus/p1p2p6-moderntar-path/vulnerable/src/fs/path.ts",
+          "labeled_lines": [
+            29,
+            65
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P1",
+      "P2",
+      "P6",
+      "P8"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/ayuhito/modern-tar"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Win32 separator/reserved-char mapping and /-split segment checks (P6-adjacent platform quirk shapes) beside strip-only name munging (P1) and prefix tests (P2); also carries validateBounds, a real resolve+startsWith complete guard.",
+  "last_verified": "2026-10-10"
+}

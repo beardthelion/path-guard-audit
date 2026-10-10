@@ -1,0 +1,41 @@
+{
+  "instance_id": "p4-coc-rust-analyzer-downloader",
+  "repo": "fannheyward/coc-rust-analyzer",
+  "repo_url": "https://github.com/fannheyward/coc-rust-analyzer",
+  "license_spdx": "MIT",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "3a898ba171e3cf3558b26f79d6bb2361faf2d9eb",
+      "files": [
+        {
+          "upstream_path": "src/downloader.ts",
+          "corpus_path": "corpus/p4-coc-rust-analyzer-downloader/vulnerable/src/downloader.ts",
+          "labeled_lines": [
+            148,
+            160
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P3",
+      "P4"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/fannheyward/coc-rust-analyzer"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "new AdmZip(tempFile).extractAllTo(storagePath) with no member-name check (P4); path.join(storagePath, release.name) with a release-shaped name and no boundary (P3).",
+  "last_verified": "2026-10-10"
+}

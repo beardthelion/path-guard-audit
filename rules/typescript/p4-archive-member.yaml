@@ -1,0 +1,110 @@
+rules:
+  - id: path-guard-audit-p4-archive-member-typescript
+    mode: taint
+    message: >-
+      An archive member name or entry object (entries()/
+      getEntries()/entry.path/entry.fileName/member.name) reaches a
+      filesystem write sink or an extract call with no member-name
+      guard vocabulary in this function (P4: Zip Slip -- a `../` entry
+      writes outside the destination).
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P4
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+        - "CWE-23: Relative Path Traversal"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, typescript, javascript]
+      references:
+        - docs/source-sink-matrix.md
+    # Sources: archive-member-shaped values only (narrower than P0's
+    # full source list).
+    pattern-sources:
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(member|entry|info|file|upload|part|item|hdr|header|tar|zip|arc)[a-z_0-9.]*'
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(name|filename|file_?name|fileName|path|linkname|linkName|orig_?filename|arcname|entry_?name|member_?name)$'
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(filename|linkname|orig_?filename|arcname|fileName|linkName)$'
+      - pattern-either:
+          - pattern: $X.entries()
+          - pattern: $X.getEntries()
+          - pattern: $X.files
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(member|entry|info|fileinfo|header|hdr|zipinfo)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  function $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async function $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  (..., $ARG, ...) => { ... }
+              - pattern-inside: |
+                  async (..., $ARG, ...) => { ... }
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $EV
+              regex: '^(?:["\x27])(entry|file)["\x27]$'
+          - pattern-either:
+              - pattern-inside: |
+                  $Z.on($EV, ($ARG, ...) => { ... })
+              - pattern-inside: |
+                  $Z.on($EV, async ($ARG, ...) => { ... })
+              - pattern-inside: |
+                  $Z.on($EV, function($ARG, ...) { ... })
+    pattern-sinks:
+      # Write/extract sinks a member name can steer.
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '^(fs|fsp|fsPromises|promises|nodeFs|fsExtra|fs\.promises)$'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(readFile|writeFile|appendFile|open|createReadStream|createWriteStream|unlink|rename|cp|copyFile|rm|rmdir|mkdir|readdir|mkdtemp|readlink|symlink|link|chmod|chown|lchown|utimes|truncate|opendir)(Sync)?$'
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '^(readFile|writeFile|appendFile|open|createReadStream|createWriteStream|unlink|rename|copyFile|rmdir|mkdir|readdir|mkdtemp|readlink|symlink|link|truncate|readFileSync|writeFileSync|appendFileSync|openSync|unlinkSync|renameSync|copyFileSync|rmdirSync|mkdirSync|readdirSync|readlinkSync|symlinkSync|linkSync|rmSync|cpSync)$'
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(zip|tar|arc|archive|unzip|zipfile|tarfile|pkg|adm)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(extract|extractAll|extractAllTo|extractEntryTo|extractEntry|unpack|x|open|decompress)$'
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(decompress|untar|unzip|uncompress|inflate)$'
+    pattern-sanitizers:
+      - by-side-effect: true
+        patterns:
+          - pattern: $GUARD(..., $X, ...)
+          - metavariable-regex:
+              metavariable: $GUARD
+              regex: '(?i)((.*[._])?(safe_?[Jj]oin|is_?[Pp]ath_?[Ii]nside|assert_?[Uu]nder_?[Rr]oot|resolve_?[Aa]nd_?[Cc]heck|within_?[Rr]oot|is_?[Ww]ithin_?[Dd]irectory|is_?[Ss]afe_?[Pp]ath|safe_?[Pp]ath|secure_?[Jj]oin|resolve_?[Ww]ithin|assert_?[Ii]nside|contained_?[Pp]ath|is_?[Ii]nside_?[Rr]oot|assert_?[Uu]nder_?[Bb]ase|check_?[Pp]ath_?[Ii]nside|guard_?[Pp]ath|assert_?[Ss]afe_?[Pp]ath|ensure_?[Pp]ath_?[Ii]nside))[a-zA-Z_0-9]*'
+          - focus-metavariable: $X

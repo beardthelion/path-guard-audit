@@ -1,0 +1,59 @@
+{
+  "instance_id": "superagi-agent-file-tools",
+  "repo": "TransformerOptimus/SuperAGI",
+  "repo_url": "https://github.com/TransformerOptimus/SuperAGI",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "resource-helper": {
+      "sha": "c3c1982e7bd6a11cfed53c5a193ea502f924b1b6",
+      "files": [
+        {
+          "upstream_path": "superagi/helper/resource_helper.py",
+          "corpus_path": "corpus/superagi-agent-file-tools/vulnerable/superagi/helper/resource_helper.py",
+          "labeled_lines": [
+            128,
+            144
+          ],
+          "role": "sink"
+        }
+      ]
+    },
+    "read-file": {
+      "sha": "c3c1982e7bd6a11cfed53c5a193ea502f924b1b6",
+      "files": [
+        {
+          "upstream_path": "superagi/tools/file/read_file.py",
+          "corpus_path": "corpus/superagi-agent-file-tools/vulnerable/superagi/tools/file/read_file.py",
+          "labeled_lines": [
+            53,
+            100
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "resource-helper": [
+      "P1",
+      "P3"
+    ],
+    "read-file": [
+      "P1",
+      "P2"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/TransformerOptimus/SuperAGI"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "get_agent_write_resource_path returns `root_dir + file_name` -- plain concat of a caller-shaped name onto a root, no boundary check (P3); sibling lines strip extensions by split (P1).",
+  "last_verified": "2026-10-10"
+}

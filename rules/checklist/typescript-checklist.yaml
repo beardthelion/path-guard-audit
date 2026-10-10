@@ -1,0 +1,165 @@
+rules:
+  # Checklist-tier candidate enumerators for TypeScript/JavaScript.
+  # Same contract as the Python checklist rules: candidates to verify,
+  # never verdicts.
+  - id: path-guard-audit-checklist-p5-typescript
+    message: >-
+      P5 checklist candidate: link-shaped archive member or filesystem
+      link call. Verify the extract/write path cannot follow a symlink or
+      hardlink out of the intended root (link targets need the same
+      boundary check as member names).
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      guard_class: P5
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        link following: member link entries and fs.symlink/fs.link calls
+        must be rejected or re-validated against the extract root
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(symlink|symlinkSync|link|linkSync|readlink|readlinkSync|isSymbolicLink)$'
+      - patterns:
+          - pattern: $X.$A
+          - metavariable-regex:
+              metavariable: $A
+              regex: '(?i)^(linkname|linkName|symlink|islink|type)$'
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(member|entry|header|info|dirent|file)[a-z_0-9.]*'
+      - patterns:
+          - pattern-either:
+              - pattern: stats.isSymbolicLink()
+              - pattern: $D.isSymbolicLink()
+          - metavariable-regex:
+              metavariable: $D
+              regex: '(?i).*(member|entry|dirent|stats|info|file)[a-z_0-9.]*'
+      # Zip Slip member write: a write stream whose path joins a member
+      # name -- enumerate for manual link/name verification.
+      - patterns:
+          - pattern: fs.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(symlink|link|readlink)(Sync)?$'
+
+  - id: path-guard-audit-checklist-p9-typescript
+    message: >-
+      P9 checklist candidate: registered entry point. Verify every
+      filesystem sink reachable from this entry point goes through a
+      complete guard, and that no second entry point reaches the same
+      sinks unguarded.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      guard_class: P9
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        guard coverage across entry points: every path from this entry
+        point to a filesystem sink shares the same complete guard
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      - patterns:
+          - metavariable-regex:
+              metavariable: $H
+              regex: '^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$'
+          - pattern-either:
+              - pattern: |
+                  function $H(...) { ... }
+              - pattern: |
+                  async function $H(...) { ... }
+              - pattern: |
+                  const $H = (..., $A, ...) => { ... }
+              - pattern: |
+                  const $H = async (..., $A, ...) => { ... }
+      - patterns:
+          - metavariable-regex:
+              metavariable: $M
+              regex: '(?i)^(get|post|put|delete|del|patch|head|options|all|use|route|ws|static|sendFile)$'
+          - pattern-either:
+              - pattern: $APP.$M(..., ($A, ...) => { ... })
+              - pattern: $APP.$M(..., async ($A, ...) => { ... })
+              - pattern: $APP.$M(..., function $H($A, ...) { ... })
+              - pattern: $APP.$M(..., async function $H($A, ...) { ... })
+      - patterns:
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource|command|addCommand)$'
+          - pattern-either:
+              - pattern: $SRV.$REG(..., async (..., $A, ...) => { ... })
+              - pattern: $SRV.$REG(..., (..., $A, ...) => { ... })
+              - pattern: $SRV.$REG(..., async function $H(..., $A, ...) { ... })
+              - pattern: $SRV.$REG(..., function $H(..., $A, ...) { ... })
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  async function $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  function $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  async $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  const $M = async (..., $ARG, ...) => { ... }
+              - pattern: |
+                  const $M = (..., $ARG, ...) => { ... }
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-zA-Z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+
+  - id: path-guard-audit-checklist-p10-typescript
+    message: >-
+      P10 checklist candidate: filesystem access touching a
+      credential-shaped path name (key/token/cookie/secret/pem/.ssh/
+      .aws/.env/passwd/id_rsa). Verify the base directory is
+      operator-fixed and cannot be steered by the caller.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      guard_class: P10
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        sensitive read/write: credential/key/cookie material paths must
+        use an operator-fixed base, never a caller-chosen one
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(readFile|writeFile|open|createReadStream|createWriteStream|read|load)(Sync)?$'
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(cred|secret|key|token|cookie|session|auth|passwd|shadow|vault|wallet|keystore)[a-z_0-9.()]*'
+      - patterns:
+          - pattern: $F($P, ...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)((.*[._])?(readFile|writeFile|open|read|load|sendFile|download|copy|move|remove|unlink|extract|extractEntryTo))$'
+          - metavariable-regex:
+              metavariable: $P
+              regex: '(?i).*(cred|secret|token|cookie|passwd|shadow|id_rsa|id_dsa|id_ecdsa|id_ed25519|known_hosts|authorized_keys|\.pem|\.key|\.p12|\.pfx|\.keystore|\.jks|\.env|\.ssh|\.aws|\.kube|\.docker|gnupg|gpg|cert|private_?key|privateKey|apikey|api_?key|apiKey|access_?token|accessToken|refresh_?token|netrc|git-credentials|pgpass|cookiejar|master\.key|credentials|secrets).*'
+      - patterns:
+          - pattern: $X.$M($P, ...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(readFile|writeFile|read|load|copy|move|extract|extractEntryTo|sendFile|download)(Sync)?$'
+          - metavariable-regex:
+              metavariable: $P
+              regex: '(?i).*(cred|secret|token|cookie|passwd|shadow|id_rsa|id_dsa|id_ecdsa|id_ed25519|known_hosts|authorized_keys|\.pem|\.key|\.p12|\.pfx|\.keystore|\.jks|\.env|\.ssh|\.aws|\.kube|\.docker|gnupg|gpg|cert|private_?key|privateKey|apikey|api_?key|apiKey|access_?token|accessToken|refresh_?token|netrc|git-credentials|pgpass|cookiejar|master\.key|credentials|secrets).*'

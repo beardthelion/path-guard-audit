@@ -1,0 +1,40 @@
+{
+  "instance_id": "salt-tarfileutil",
+  "repo": "saltstack/salt",
+  "repo_url": "https://github.com/saltstack/salt",
+  "license_spdx": "Apache-2.0",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "f37cdcd1c93f778a84f83b3cc9933cac92d0456b",
+      "files": [
+        {
+          "upstream_path": "salt/utils/tarfileutil.py",
+          "corpus_path": "corpus/salt-tarfileutil/vulnerable/salt/utils/tarfileutil.py",
+          "labeled_lines": [
+            15,
+            67
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P4"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/saltstack/salt"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "tar.extractall(...)/tar.extract(...) without filter= or a per-member boundary check inside the wrapper; the filter='data' arms are correctly excluded.",
+  "last_verified": "2026-10-10"
+}

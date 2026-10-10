@@ -1,0 +1,42 @@
+{
+  "instance_id": "p1-thinkrag-file-upload",
+  "repo": "wzdavid/ThinkRAG",
+  "repo_url": "https://github.com/wzdavid/ThinkRAG",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "85ebd7856ab00b47c6ae3ce67d2389d4cf2bc081",
+      "files": [
+        {
+          "upstream_path": "server/utils/file.py",
+          "corpus_path": "corpus/p1-thinkrag-file-upload/vulnerable/server/utils/file.py",
+          "labeled_lines": [
+            8,
+            34
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P1",
+      "P2",
+      "P4"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/wzdavid/ThinkRAG"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "sanitize_filename = basename + replace('..','') strip only (P1); save_uploaded_file joins save_dir then abspath-startswith (P2-ish abspath covered, so site also reports the P4 member-write shape via uploaded_file.name flow).",
+  "last_verified": "2026-10-10"
+}

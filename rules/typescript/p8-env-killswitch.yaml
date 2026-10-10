@@ -1,0 +1,85 @@
+rules:
+  - id: path-guard-audit-p8-typescript-env-killswitch
+    message: >-
+      An environment variable whose name reads as a path-guard bypass
+      (ALLOW/BYPASS/DISABLE/SKIP/UNSAFE/INSECURE/PERMISSIVE/NO_ plus a
+      filesystem word: PATH/DIR/FILE/ROOT/SANDBOX/TRAVERSAL/...) is
+      read here (P8: env kill-switch). When it gates a path check the
+      entire guard collapses to an operator flag a caller or inherited
+      environment can set.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P8
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      confidence: HIGH
+      likelihood: LOW
+      impact: MEDIUM
+      technology: [pathtraversal, typescript, javascript]
+      references:
+        - docs/source-sink-matrix.md
+    # Search mode: the env read or env-name constant is the finding.
+    # Regex literals and identifier text both gate on the
+    # bypass-word + filesystem-word pair so telemetry toggles stay out.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: process.env.$V
+                  - pattern: process.env[$V]
+              - metavariable-regex:
+                  metavariable: $V
+                  regex: '(?i)[a-z_0-9."\x27]*[A-Z0-9_]*(ALLOW|BYPASS|DISABLE|SKIP|UNSAFE|INSECURE|DANGEROUS|PERMISSIVE|NO_)[A-Z0-9_]*(PATH|DIR|FILE|ROOT|FOLDER|GUARD|SANDBOX|TRAVERSAL|RESTRICT|JAIL)[A-Z0-9_]*'
+          - patterns:
+              - pattern-either:
+                  - pattern: const $N = $V
+                  - pattern: let $N = $V
+                  - pattern: var $N = $V
+              - metavariable-regex:
+                  metavariable: $V
+                  regex: '(?i)^["\x27][A-Z0-9_]*(ALLOW|BYPASS|DISABLE|SKIP|UNSAFE|INSECURE|DANGEROUS|PERMISSIVE|NO_)[A-Z0-9_]*(PATH|DIR|FILE|ROOT|FOLDER|GUARD|SANDBOX|TRAVERSAL|RESTRICT|JAIL)[A-Z0-9_]*["\x27]$'
+
+  - id: path-guard-audit-p8-typescript-default-off
+    message: >-
+      A root/allowlist-shaped name (allowedPaths, PERMITTED_ROOTS,
+      pathAllowlist, ...) is declared with an empty or off default
+      ([], {}, null, undefined, false) (P8: guard off by default). An
+      empty allowlist is a guard that does nothing until an operator
+      opts in.
+    severity: WARNING
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P8
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      confidence: MEDIUM
+      likelihood: LOW
+      impact: MEDIUM
+      technology: [pathtraversal, typescript, javascript]
+      references:
+        - docs/source-sink-matrix.md
+    patterns:
+      - pattern-either:
+          - pattern: const $V = []
+          - pattern: let $V = []
+          - pattern: var $V = []
+          - pattern: const $V = null
+          - pattern: let $V = null
+          - pattern: const $V = undefined
+          - pattern: let $V = undefined
+          - pattern: const $V = false
+          - pattern: let $V = false
+          - pattern: const $V = {}
+          - pattern: let $V = {}
+          - pattern: $V ?? []
+          - pattern: $V ?? {}
+          - pattern: $V || []
+          - pattern: $V || {}
+      - metavariable-regex:
+          metavariable: $V
+          regex: '(?i)^[a-z_0-9]*((allow|permit|white_?list)[a-z_0-9]*(path|dir|root|file|folder|name)s?|(path|dir|root|file|folder|name)s?_?(allow|permit|white_?list))[a-z_0-9]*$'

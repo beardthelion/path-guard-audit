@@ -1,0 +1,137 @@
+rules:
+  - id: path-guard-audit-p4-archive-member-python
+    mode: taint
+    message: >-
+      An archive member name or member object (namelist/infolist/
+      getmembers/member.name/member.filename/member.linkname) reaches a
+      filesystem write sink or an extract call with no member-name guard
+      vocabulary in this function (P4: Zip Slip -- members like
+      `../../etc/cron.d/x` write outside the extract root).
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P4
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+        - "CWE-23: Relative Path Traversal"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, python]
+      references:
+        - docs/source-sink-matrix.md
+    # Sources: archive-member-shaped values only (narrower than P0's
+    # full source list): member name fields and member enumerators.
+    pattern-sources:
+      # Member-object parameters: `def extract(zf, member, dest)` where
+      # member is a ZipInfo/TarInfo-shaped value.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(member|entry|tarinfo|zipinfo|info|archive_?member|file_?info|header|hdr)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Member-ish field reads: member.name, member.filename,
+      # tarinfo.linkname, zipinfo.filename, entry.orig_filename, ...
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(member|entry|info|file|upload|part|item|hdr|header|tar|zip|arc)[a-z_0-9.]*'
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(name|filename|file_?name|path|linkname|orig_?filename|arcname|orig_?name|entry_?name|member_?name)$'
+      # Member/name reads without receiver gating (filename/linkname are
+      # unambiguous member-shaped members).
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(filename|linkname|orig_?filename|arcname)$'
+      # Member enumerators: each yielded name/object is archive-writer
+      # shaped.
+      - pattern-either:
+          - pattern: $X.namelist()
+          - pattern: $X.getnames()
+          - pattern: $X.infolist()
+          - pattern: $X.getmembers()
+          - pattern: $X.getinfo(...)
+          - pattern: $X.getmember(...)
+      # Loop variables bound to a member-shaped iterable element also
+      # carry the member field reads above via the enumerators; the field
+      # and enumerator shapes cover the common write paths.
+    pattern-sinks:
+      # Write/extract sinks a member name can steer: every write and list
+      # sink from docs/source-sink-matrix.md, plus archive extract calls
+      # that take a member argument.
+      - pattern-either:
+          - pattern: open(...)
+          - pattern: builtins.open(...)
+          - pattern: io.open(...)
+          - pattern: codecs.open(...)
+          - pattern: gzip.open(...)
+          - pattern: bz2.open(...)
+          - pattern: lzma.open(...)
+          - pattern: os.open(...)
+          - pattern: tarfile.open(...)
+          - pattern: zipfile.ZipFile(...)
+      - patterns:
+          - pattern: os.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(remove|unlink|rename|replace|rmdir|removedirs|mkdir|makedirs|listdir|scandir|walk|truncate|chmod|chown|lchown|utime|link|symlink|mknod|chdir)$'
+      - patterns:
+          - pattern: shutil.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(copy|copy2|copyfile|copyfileobj|copytree|move|rmtree|chown|unpack_archive|make_archive)$'
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(read_text|read_bytes|write_text|write_bytes|iterdir|symlink_to|link_to|hardlink_to|touch)$'
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(path|file|dir|folder|dest|target|root|entry|member)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(open|mkdir|rename|replace|unlink|rmdir|glob|rglob|chmod|touch)$'
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(zip|tar|arc|archive|zf|tf|pkg)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(extract|extractall|extractfile|_extract_member|open)$'
+
+    pattern-sanitizers:
+      # A single focused by-side-effect entry covers both forms:
+      # `checked = safe_join(base, p)` (the call result is clean) and
+      # `assert_under_root(x)` (the argument l-value is clean going
+      # forward). focus-metavariable is required for by-side-effect to
+      # work, and a second unfocused sanitizer entry on the same call
+      # disables the side-effect behavior, so this must stay a single
+      # entry. Ceiling: it cannot clean a raw handler parameter (the
+      # param binding stays tainted for the whole function body in
+      # Semgrep CE); it does clean locals derived from the parameter.
+      # Sites that check-and-throw on the raw param still fire here and
+      # resolve to recognized-complete via the complete-guard site probe
+      # (docs/source-sink-matrix.md).
+      - by-side-effect: true
+        patterns:
+          - pattern: $GUARD(..., $X, ...)
+          - metavariable-regex:
+              metavariable: $GUARD
+              regex: '(?i)((.*[._])?(safe_?join|is_?path_?inside|assert_?under_?root|resolve_?and_?check|within_?root|is_?within_?directory|is_?safe_?path|safe_?path|secure_?join|resolve_?within|assert_?inside|contained_?path|is_?inside_?root|assert_?under_?base|check_?path_?inside|guard_?path|assert_?safe_?path|ensure_?path_?inside))[a-z_0-9]*'
+          - focus-metavariable: $X

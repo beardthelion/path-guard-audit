@@ -1,0 +1,302 @@
+rules:
+  - id: path-guard-audit-p0-python
+    mode: taint
+    message: >-
+      Caller-shaped path or archive-member input reaches a filesystem
+      sink with no recognized complete path guard on the intra-function
+      taint path (P0: no guard). Weak or unrecognized guards also produce
+      this raw finding; the scan pipeline suppresses or relabels it per
+      the layered site resolution in docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P0
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+        - "CWE-23: Relative Path Traversal"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, python]
+      references:
+        - docs/source-sink-matrix.md
+    # Sources: the entry-point vocabulary of docs/source-sink-matrix.md --
+    # path-named parameters, path-named field reads, request-object
+    # members, archive member enumerators, and registered entry points
+    # (route decorators, tool registrations, dispatch methods, Tool-class
+    # entry methods). A tainted parameter stays tainted for the whole
+    # function body (parameter stickiness); the matrix doc covers the
+    # ceiling notes.
+    pattern-sources:
+      # Path-named parameters of any function or method, registered or
+      # not: `def serve(path)` is an entry point for this analyzer.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|member_name|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Suffix forms: save_path, fileName, memberName, out_dir, ...
+      # Case-sensitive camel halves keep `dump`-style names out.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^([a-z_0-9]+_(path|filepath|filename|file|dir|directory|folder|dest|destination|target|member|entry|key|name)|[a-z_0-9]+(Path|Filepath|FileName|Filename|File|Dir|Directory|Folder|Dest|Destination|Target|Member|Entry|Key|Name))(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Path-named attribute reads off any object (config objects, payload
+      # models, upload objects, archive members): file.filename,
+      # cfg.backup_path, tarinfo.linkname, upload.filename, ...
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(path|filepath|file_?path|filename|file_?name|pathname|path_?name|relative_?path|rel_?path|dest|destination|target|object_?key|member_?name|linkname|original_?filename|full_?path|real_?path|abs_?path|save_?path|upload_?path|local_?path|cache_?path|stored_?path)$'
+      # `.name` reads gated to member-ish receivers: member.name,
+      # entry.name, zipinfo.name, upload.name, part.name. A bare `.name`
+      # on an arbitrary object is not a path.
+      - patterns:
+          - pattern: $X.name
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(member|entry|info|file|upload|part|blob|object|doc|asset|item|resource|tar|zip|arc)[a-z_0-9.]*'
+      # Path-named key reads: payload["path"], args.get("filename"),
+      # kwargs["dest"], ...
+      - patterns:
+          - pattern-either:
+              - pattern: $X[$K]
+              - pattern: $X.get($K, ...)
+          - metavariable-regex:
+              metavariable: $K
+              regex: >-
+                (?i)^["'](path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)["']$
+      # HTTP request-object members (Flask/Django/FastAPI/Starlette/aiohttp
+      # style): query/body/files member reads off a request receiver are
+      # caller-controlled. Receiver-gated so unrelated .data/.params
+      # attributes are not sources.
+      - patterns:
+          - pattern: $REQ.$F
+          - metavariable-regex:
+              metavariable: $REQ
+              regex: '(.*\.)?(request|req)$'
+          - metavariable-regex:
+              metavariable: $F
+              regex: '^(args|GET|POST|query_params|path_params|form|data|json|params|values|query|body|files|FILES|stream|headers|match_info|view_args|multipart)$'
+      # Archive member enumerators: each extracted name is
+      # archive-writer shaped. Covers `for n in zf.namelist():` and
+      # `for m in tf.getmembers():` loops.
+      - pattern-either:
+          - pattern: $X.namelist()
+          - pattern: $X.getnames()
+          - pattern: $X.infolist()
+          - pattern: $X.getmembers()
+      # Route decorators: any parameter of a function registered via a web
+      # route/handler decorator (Flask/Bottle @app.route/@get,
+      # FastAPI/Starlette @router.get, Django REST @api_view/@action). The
+      # decorator method name is the signal, not the receiver.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(route|api_route|get|post|put|delete|patch|head|options|websocket|add_url_rule|api_view|action|command|expose)$'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Agent/tool registrations (one entry family among several): any
+      # parameter of a function decorated as a tool entry point. The
+      # decorator method name is the signal, not the receiver, so FastMCP,
+      # low-level SDK servers, and vendored variants all match. A tainted
+      # `arguments` dict taints every value extracted from it
+      # (arguments["path"], arguments.get(...)).
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)$'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Dispatch-method source: a def/async def named like a tool
+      # dispatcher that takes an args/params/request parameter. Covers
+      # class-based registries where a CallTool switch delegates to
+      # `tool.execute(args)` and the sink lives inside the method body.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  async def $M(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  def $M(..., $ARG, ...):
+                    ...
+      # Framework tool-entry methods: `Tool.forward`/`BaseTool._run`/
+      # `_arun` entry methods on Tool-named classes. Every parameter
+      # besides self/cls is a source, including **kwargs.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+          - pattern-either:
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    def $M(..., $ARG, ...):
+                      ...
+                    ...
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    async def $M(..., $ARG, ...):
+                      ...
+                    ...
+    pattern-sinks:
+      # Sinks: the vocabulary of docs/source-sink-matrix.md. A call is a
+      # sink when any tainted value reaches it (the path argument, or a
+      # receiver built from a tainted path such as Path(name).open()).
+      - pattern-either:
+          # Builtin and module-qualified opens.
+          - pattern: open(...)
+          - pattern: builtins.open(...)
+          - pattern: io.open(...)
+          - pattern: codecs.open(...)
+          - pattern: gzip.open(...)
+          - pattern: bz2.open(...)
+          - pattern: lzma.open(...)
+          - pattern: os.open(...)
+          - pattern: tarfile.open(...)
+          - pattern: zipfile.ZipFile(...)
+          - pattern: gzip.GzipFile(...)
+          - pattern: bz2.BZ2File(...)
+          - pattern: lzma.LZMAFile(...)
+      # os module filesystem calls.
+      - patterns:
+          - pattern: os.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(remove|unlink|rename|replace|rmdir|removedirs|mkdir|makedirs|listdir|scandir|walk|truncate|chmod|chown|lchown|utime|link|symlink|mknod|chdir)$'
+      # shutil filesystem calls.
+      - patterns:
+          - pattern: shutil.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(copy|copy2|copyfile|copyfileobj|copytree|move|rmtree|chown|unpack_archive|make_archive)$'
+      # glob list sinks.
+      - patterns:
+          - pattern: glob.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(glob|iglob)$'
+      # Path-object methods on any receiver: p.read_text(),
+      # Path(name).open(), p.mkdir().
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(read_text|read_bytes|write_text|write_bytes|iterdir|symlink_to|link_to|hardlink_to|touch)$'
+      # Path-object verbs that also exist on unrelated objects are
+      # receiver-gated so db.open()/conn.mkdir() stay out.
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(path|file|dir|folder|dest|target|root|entry|member)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(open|mkdir|rename|replace|unlink|rmdir|glob|rglob|chmod|touch)$'
+      # Extract methods on archive receivers: zf.extract(member),
+      # tf.extractall(dest), zf.extractfile(member).
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(zip|tar|arc|archive|zf|tf|pkg)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(extract|extractall|extractfile|_extract_member|open)$'
+      # Web response / static-file helpers: send_file(p),
+      # send_from_directory(d, p), FileResponse(p), StaticFiles(dir=p).
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)((.*[._])?(send_?file|send_?from_?directory|sendfile|x_?sendfile|FileResponse|StaticFiles|serve_?file|serve_?static|attachment))$'
+    # Sanitizers: only the recognized complete-guard call vocabulary
+    # (canonicalize + root boundary + platform policy; see
+    # docs/source-sink-matrix.md). by-side-effect covers check-and-throw
+    # validators that sanitize their argument without returning it.
+    # Deliberately absent: os.path.join, normpath, abspath, resolve,
+    # startswith, secure_filename, basename, unquote, re.sub. Those leave
+    # the value tainted so the site resolves to a weak class or to
+    # unrecognized-guard downstream instead of going silent.
+    pattern-sanitizers:
+      # A single focused by-side-effect entry covers both forms:
+      # `checked = safe_join(base, p)` (the call result is clean) and
+      # `assert_under_root(x)` (the argument l-value is clean going
+      # forward). focus-metavariable is required for by-side-effect to
+      # work, and a second unfocused sanitizer entry on the same call
+      # disables the side-effect behavior, so this must stay a single
+      # entry. Ceiling: it cannot clean a raw handler parameter (the
+      # param binding stays tainted for the whole function body in
+      # Semgrep CE); it does clean locals derived from the parameter.
+      # Sites that check-and-throw on the raw param still fire here and
+      # resolve to recognized-complete via the complete-guard site probe
+      # (docs/source-sink-matrix.md).
+      - by-side-effect: true
+        patterns:
+          - pattern: $GUARD(..., $X, ...)
+          - metavariable-regex:
+              metavariable: $GUARD
+              regex: '(?i)((.*[._])?(safe_?join|is_?path_?inside|assert_?under_?root|resolve_?and_?check|within_?root|is_?within_?directory|is_?safe_?path|safe_?path|secure_?join|resolve_?within|assert_?inside|contained_?path|is_?inside_?root|assert_?under_?base|check_?path_?inside|guard_?path|assert_?safe_?path|ensure_?path_?inside))[a-z_0-9]*'
+          - focus-metavariable: $X

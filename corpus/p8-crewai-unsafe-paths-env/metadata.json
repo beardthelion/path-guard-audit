@@ -1,0 +1,40 @@
+{
+  "instance_id": "p8-crewai-unsafe-paths-env",
+  "repo": "crewAIInc/crewAI",
+  "repo_url": "https://github.com/crewAIInc/crewAI",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "6b93fa0e25a926215ca7bb52a95d4db7d9d7262d",
+      "files": [
+        {
+          "upstream_path": "lib/crewai-tools/src/crewai_tools/security/safe_path.py",
+          "corpus_path": "corpus/p8-crewai-unsafe-paths-env/vulnerable/lib/crewai-tools/src/crewai_tools/security/safe_path.py",
+          "labeled_lines": [
+            24,
+            26
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P8"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/crewAIInc/crewAI/pull/5315"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "CREWAI_TOOLS_ALLOW_UNSAFE_PATHS env constant is the documented escape hatch: the guard collapses to an operator flag.",
+  "last_verified": "2026-10-10"
+}

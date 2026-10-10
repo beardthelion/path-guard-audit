@@ -1,0 +1,312 @@
+rules:
+  - id: path-guard-audit-p3-join-no-boundary-python
+    mode: taint
+    message: >-
+      Caller-shaped path input is joined to a base (os.path.join,
+      Path(base) / name, Path(base, name)) with no boundary check
+      (startswith/commonpath/is_relative_to/relative_to/relpath/isabs) in
+      the same function (P3: join without confinement). An absolute second
+      argument or `..` segments escape the base; a join alone cannot
+      confine. classify.py suppresses the sibling P0 finding at the same
+      site.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P3
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+        - "CWE-23: Relative Path Traversal"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, python]
+      references:
+        - docs/source-sink-matrix.md
+    pattern-sources:
+      # Path-named parameters of any function or method, registered or
+      # not: `def serve(path)` is an entry point for this analyzer.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|member_name|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Suffix forms: save_path, fileName, memberName, out_dir, ...
+      # Case-sensitive camel halves keep `dump`-style names out.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^([a-z_0-9]+_(path|filepath|filename|file|dir|directory|folder|dest|destination|target|member|entry|key|name)|[a-z_0-9]+(Path|Filepath|FileName|Filename|File|Dir|Directory|Folder|Dest|Destination|Target|Member|Entry|Key|Name))(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Path-named attribute reads off any object (config objects, payload
+      # models, upload objects, archive members): file.filename,
+      # cfg.backup_path, tarinfo.linkname, upload.filename, ...
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(path|filepath|file_?path|filename|file_?name|pathname|path_?name|relative_?path|rel_?path|dest|destination|target|object_?key|member_?name|linkname|original_?filename|full_?path|real_?path|abs_?path|save_?path|upload_?path|local_?path|cache_?path|stored_?path)$'
+      # `.name` reads gated to member-ish receivers: member.name,
+      # entry.name, zipinfo.name, upload.name, part.name. A bare `.name`
+      # on an arbitrary object is not a path.
+      - patterns:
+          - pattern: $X.name
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(member|entry|info|file|upload|part|blob|object|doc|asset|item|resource|tar|zip|arc)[a-z_0-9.]*'
+      # Path-named key reads: payload["path"], args.get("filename"),
+      # kwargs["dest"], ...
+      - patterns:
+          - pattern-either:
+              - pattern: $X[$K]
+              - pattern: $X.get($K, ...)
+          - metavariable-regex:
+              metavariable: $K
+              regex: >-
+                (?i)^["'](path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)["']$
+      # HTTP request-object members (Flask/Django/FastAPI/Starlette/aiohttp
+      # style): query/body/files member reads off a request receiver are
+      # caller-controlled. Receiver-gated so unrelated .data/.params
+      # attributes are not sources.
+      - patterns:
+          - pattern: $REQ.$F
+          - metavariable-regex:
+              metavariable: $REQ
+              regex: '(.*\.)?(request|req)$'
+          - metavariable-regex:
+              metavariable: $F
+              regex: '^(args|GET|POST|query_params|path_params|form|data|json|params|values|query|body|files|FILES|stream|headers|match_info|view_args|multipart)$'
+      # Archive member enumerators: each extracted name is
+      # archive-writer shaped. Covers `for n in zf.namelist():` and
+      # `for m in tf.getmembers():` loops.
+      - pattern-either:
+          - pattern: $X.namelist()
+          - pattern: $X.getnames()
+          - pattern: $X.infolist()
+          - pattern: $X.getmembers()
+      # Route decorators: any parameter of a function registered via a web
+      # route/handler decorator (Flask/Bottle @app.route/@get,
+      # FastAPI/Starlette @router.get, Django REST @api_view/@action). The
+      # decorator method name is the signal, not the receiver.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(route|api_route|get|post|put|delete|patch|head|options|websocket|add_url_rule|api_view|action|command|expose)$'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Agent/tool registrations (one entry family among several): any
+      # parameter of a function decorated as a tool entry point. The
+      # decorator method name is the signal, not the receiver, so FastMCP,
+      # low-level SDK servers, and vendored variants all match. A tainted
+      # `arguments` dict taints every value extracted from it
+      # (arguments["path"], arguments.get(...)).
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)$'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+      # Dispatch-method source: a def/async def named like a tool
+      # dispatcher that takes an args/params/request parameter. Covers
+      # class-based registries where a CallTool switch delegates to
+      # `tool.execute(args)` and the sink lives inside the method body.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  async def $M(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  def $M(..., $ARG, ...):
+                    ...
+      # Framework tool-entry methods: `Tool.forward`/`BaseTool._run`/
+      # `_arun` entry methods on Tool-named classes. Every parameter
+      # besides self/cls is a source, including **kwargs.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+          - pattern-either:
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    def $M(..., $ARG, ...):
+                      ...
+                    ...
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    async def $M(..., $ARG, ...):
+                      ...
+                    ...
+    pattern-sinks:
+      # Sinks: the join/construct expression the tainted path reaches. Any
+      # tainted operand counts: a caller-chosen member arg escapes the
+      # base, a caller-chosen base escapes everything.
+      - patterns:
+          - pattern-either:
+              - pattern: os.path.join(...)
+              - pattern: posixpath.join(...)
+              - pattern: ntpath.join(...)
+              - pattern: Path($A, $B, ...)
+              - pattern: pathlib.Path($A, $B, ...)
+              # The `/` path-composition operator on a path-shaped base:
+              # `Path(base) / name`. The receiver gate keeps arithmetic
+              # division out.
+              - patterns:
+                  - pattern: $B / $P
+                  - metavariable-regex:
+                      metavariable: $B
+                      regex: '(?i).*(path|dir|base|root|folder|dest|target|Path|Directory|File)[a-zA-Z_0-9.()]*'
+              # String concat: f-string and + forms where one operand is
+              # path-shaped.
+              - patterns:
+                  - pattern: $B + $P
+                  - metavariable-regex:
+                      metavariable: $B
+                      regex: '(?i).*(path|dir|base|root|folder|dest|target|Dir)[a-zA-Z_0-9.]*'
+          # Exclusions: a boundary check in the same function means the
+          # join is not the whole story; the check itself reports its own
+          # class (P2) or resolves via site resolution.
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.startswith(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.endswith(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.commonprefix(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.commonpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.is_relative_to(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.relative_to(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.relpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.isabs(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.is_absolute(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... is_relative_to(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... relative_to(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... commonpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... commonprefix(...) ...>
+                ...
+          - pattern-not-inside: |
+              async def $F(...):
+                ...
+                <... is_relative_to(...) ...>
+                ...
+          - pattern-not-inside: |
+              async def $F(...):
+                ...
+                <... relative_to(...) ...>
+                ...
+          - pattern-not-inside: |
+              async def $F(...):
+                ...
+                <... commonpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              async def $F(...):
+                ...
+                <... commonprefix(...) ...>
+                ...

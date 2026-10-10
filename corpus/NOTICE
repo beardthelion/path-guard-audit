@@ -1,0 +1,51 @@
+Corpus attribution
+
+Each corpus instance lists its upstream repository, license, and advisory
+references in its own metadata.json and in manifest.jsonl. This NOTICE
+summarizes the vendored instances; everything under corpus/<instance_id>/
+is a verbatim source snapshot at the pinned SHA, redistributed under the
+upstream license named here.
+
+- crewAIInc/crewAI (crewai-tools package)
+  License: MIT
+  Instances: p0-crewai-file-read-tool (vulnerable and guarded states),
+             clean-crewai-file-writer-tool, p8-crewai-unsafe-paths-env
+
+- TransformerOptimus/SuperAGI
+  License: MIT
+  Instance: superagi-agent-file-tools
+
+- saltstack/salt
+  License: Apache-2.0
+  Instances: salt-archive-module, salt-tarfileutil
+
+- fannheyward/coc-rust-analyzer
+  License: MIT
+  Instance: p4-coc-rust-analyzer-downloader
+
+- wzdavid/ThinkRAG
+  License: MIT
+  Instance: p1-thinkrag-file-upload
+
+- FlintSH/Flare
+  License: MIT
+  Instance: p1-flare-paths
+
+- Mat-O-Lab/RDFConverter
+  License: Apache-2.0
+  Instance: p7-rdfconverter-open-file
+
+- ayuhito/modern-tar
+  License: MIT
+  Instance: p1p2p6-moderntar-path
+
+- modelcontextprotocol/servers (src/filesystem MCP server)
+  License: MIT OR Apache-2.0 (upstream license transition in progress)
+  Instance: checklist-mcp-filesystem
+
+- gptme/gptme
+  License: MIT
+  Instance: gptme-file-tools
+
+Corpus content that is original to this repository (manifest.jsonl,
+metadata.json files, this NOTICE) is licensed CC BY 4.0; see LICENSE.

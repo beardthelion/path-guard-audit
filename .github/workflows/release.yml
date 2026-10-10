@@ -1,0 +1,49 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install toolchain
+        run: pip install "semgrep>=1.177.0,<1.178" build
+      - name: Build single-file rules bundle
+        run: |
+          mkdir -p dist
+          python3 - <<'PY'
+          import pathlib
+          out = pathlib.Path("dist/path-guard-audit.yaml")
+          body = []
+          for p in sorted(pathlib.Path("rules").rglob("*.yaml")):
+              for line in p.read_text().splitlines():
+                  if line.strip() == "rules:":
+                      continue
+                  body.append(line)
+              body.append("")
+          out.write_text("rules:\n" + "\n".join(body) + "\n")
+          print(f"wrote {out}")
+          PY
+      - name: Validate bundle
+        run: semgrep validate dist/path-guard-audit.yaml
+      - name: Build wheel and sdist
+        run: python3 -m build
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "path-guard-audit ${{ github.ref_name }}" \
+            --generate-notes \
+            dist/path-guard-audit.yaml \
+            dist/path_guard_audit-*.whl \
+            dist/path_guard_audit-*.tar.gz

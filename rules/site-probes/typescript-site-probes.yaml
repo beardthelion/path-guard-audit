@@ -1,0 +1,336 @@
+rules:
+  # Site-enumerator and guard-shape probes for TypeScript/JavaScript.
+  # Same contract as rules/site-probes/python-site-probes.yaml: search
+  # mode, location markers only, consumed by the CLI site resolution.
+  - id: path-guard-audit-probe-handler-source-typescript
+    message: >-
+      Site probe: entry-point candidate (source enumerator). Consumed by
+      the path-guard-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: handler_source
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      # Verb-named route handlers (Next.js style): export function GET,
+      # const POST = async (req) => ...
+      - patterns:
+          - metavariable-regex:
+              metavariable: $H
+              regex: '^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$'
+          - pattern-either:
+              - pattern: |
+                  function $H(...) { ... }
+              - pattern: |
+                  async function $H(...) { ... }
+              - pattern: |
+                  const $H = (..., $A, ...) => { ... }
+              - pattern: |
+                  const $H = async (..., $A, ...) => { ... }
+      # Framework verb registrations: app.get("/x", (req, res) => ...),
+      # router.post(...), server.use(...). The callback is the extent.
+      - patterns:
+          - metavariable-regex:
+              metavariable: $M
+              regex: '(?i)^(get|post|put|delete|del|patch|head|options|all|use|route|ws|static|sendFile)$'
+          - pattern-either:
+              - pattern: $APP.$M(..., ($A, ...) => { ... })
+              - pattern: $APP.$M(..., async ($A, ...) => { ... })
+              - pattern: $APP.$M(..., function $H($A, ...) { ... })
+              - pattern: $APP.$M(..., async function $H($A, ...) { ... })
+      # Tool registrations: server.tool("name", async (args) => ...),
+      # registerTool, setRequestHandler, prompt, resource.
+      - patterns:
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource|command|addCommand)$'
+          - pattern-either:
+              - pattern: $SRV.$REG(..., async (..., $A, ...) => { ... })
+              - pattern: $SRV.$REG(..., (..., $A, ...) => { ... })
+              - pattern: $SRV.$REG(..., async (..., $A, ...) => ...)
+              - pattern: $SRV.$REG(..., (..., $A, ...) => ...)
+              - pattern: $SRV.$REG(..., async function $H(..., $A, ...) { ... })
+              - pattern: $SRV.$REG(..., function $H(..., $A, ...) { ... })
+              - pattern: $SRV.$REG(..., async ({ ..., $PROP, ... }, ...) => { ... })
+              - pattern: $SRV.$REG(..., ({ ..., $PROP, ... }, ...) => { ... })
+      # Dispatch-method extents: execute/handle/dispatch/process/invoke/
+      # run/call taking an args/params/request/input parameter.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  async function $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  function $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  async $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  $M(..., $ARG, ...) { ... }
+              - pattern: |
+                  const $M = async (..., $ARG, ...) => { ... }
+              - pattern: |
+                  const $M = (..., $ARG, ...) => { ... }
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-zA-Z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+      # Path-named-parameter functions (exact names).
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  function $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  async function $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  async $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  (..., $ARG, ...) => { ... }
+              - pattern: |
+                  async (..., $ARG, ...) => { ... }
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|member_name|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)(\W.*)?$'
+      # Path-named-parameter functions (suffix forms).
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  function $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  async function $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  async $F(..., $ARG, ...) { ... }
+              - pattern: |
+                  (..., $ARG, ...) => { ... }
+              - pattern: |
+                  async (..., $ARG, ...) => { ... }
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^([a-z_0-9]+_(path|filepath|filename|file|dir|directory|folder|dest|destination|target|member|entry|key|name)|[a-z_0-9]+(Path|Filepath|FileName|Filename|File|Dir|Directory|Folder|Dest|Destination|Target|Member|Entry|Key|Name))(\W.*)?$'
+      # Functions/methods/callbacks containing path-named field reads,
+      # request members, or key reads. An extent is only a bounding box,
+      # so member names are broader than the taint list.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  function $F(...) {
+                    ...
+                    <... $X.$A ...>
+                    ...
+                  }
+              - pattern: |
+                  async function $F(...) {
+                    ...
+                    <... $X.$A ...>
+                    ...
+                  }
+              - pattern: |
+                  $F(...) {
+                    ...
+                    <... $X.$A ...>
+                    ...
+                  }
+              - pattern: |
+                  async $F(...) {
+                    ...
+                    <... $X.$A ...>
+                    ...
+                  }
+              - pattern: |
+                  ($A0, ...) => {
+                    ...
+                    <... $X.$A ...>
+                    ...
+                  }
+              - pattern: |
+                  async ($A0, ...) => {
+                    ...
+                    <... $X.$A ...>
+                    ...
+                  }
+          - metavariable-regex:
+              metavariable: $A
+              regex: '^(path|filePath|filepath|filename|fileName|file_name|pathname|pathName|relativePath|relPath|dest|destination|target|objectKey|object_key|memberName|linkname|linkName|originalname|originalName|fullPath|realPath|absPath|savePath|uploadPath|localPath|cachePath|name|query|body|params|param|querystring|nextUrl|searchParams|formData|data|json|args|files|file|entries|headers|values)$'
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  function $F(...) {
+                    ...
+                    <... $X[$K] ...>
+                    ...
+                  }
+              - pattern: |
+                  async function $F(...) {
+                    ...
+                    <... $X[$K] ...>
+                    ...
+                  }
+              - pattern: |
+                  $F(...) {
+                    ...
+                    <... $X[$K] ...>
+                    ...
+                  }
+              - pattern: |
+                  async $F(...) {
+                    ...
+                    <... $X[$K] ...>
+                    ...
+                  }
+              - pattern: |
+                  ($A0, ...) => {
+                    ...
+                    <... $X[$K] ...>
+                    ...
+                  }
+              - pattern: |
+                  async ($A0, ...) => {
+                    ...
+                    <... $X[$K] ...>
+                    ...
+                  }
+          - metavariable-regex:
+              metavariable: $K
+              regex: >-
+                (?i)^["'](path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)["']$
+
+  - id: path-guard-audit-probe-path-sink-typescript
+    message: >-
+      Site probe: filesystem/archive sink call (sink enumerator).
+      Consumed by the path-guard-audit CLI site resolution; not a
+      standalone finding.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: path_sink
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Identical sink vocabulary to
+    # rules/typescript/p0-unguarded-path.yaml so every sink the taint
+    # rules can fire on is also enumerated here.
+    pattern-either:
+      # fs module calls (fs.*, fsp.*, fsPromises.*, promises.*,
+      # nodeFs.*) for the fs method set, including *Sync variants.
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '^(fs|fsp|fsPromises|promises|nodeFs|fsExtra|fs\.promises)$'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(readFile|writeFile|appendFile|open|createReadStream|createWriteStream|unlink|rename|cp|copyFile|rm|rmdir|mkdir|readdir|mkdtemp|readlink|symlink|link|chmod|chown|lchown|utimes|truncate|opendir)(Sync)?$'
+      # Bare fs calls (covers destructured or direct imports).
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '^(readFile|writeFile|appendFile|open|createReadStream|createWriteStream|unlink|rename|copyFile|rmdir|mkdir|readdir|mkdtemp|readlink|symlink|link|truncate|readFileSync|writeFileSync|appendFileSync|openSync|unlinkSync|renameSync|copyFileSync|rmdirSync|mkdirSync|readdirSync|readlinkSync|symlinkSync|linkSync|rmSync|cpSync)$'
+      # Response send helpers on res/reply/ctx-shaped receivers.
+      - patterns:
+          - pattern: $R.$M(...)
+          - metavariable-regex:
+              metavariable: $R
+              regex: '(?i).*(res|response|reply|ctx|context|server|app)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '(?i)^(sendfile|download|sendfile|send_?file|serve|sendStatic|file)$'
+      # Static-file middleware/server builders.
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)((.*[._])?(serveStatic|express\.static|serve_static|serveStaticFromRoot|serveFile|sendFile))$'
+      # Archive extract calls on archive-ish receivers.
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(zip|tar|arc|archive|unzip|zipfile|tarfile|pkg|adm)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(extract|extractAll|extractAllTo|extractEntryTo|extractEntry|unpack|x|open|decompress)$'
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(decompress|untar|unzip|uncompress|inflate)$'
+      - patterns:
+          - pattern: unzipper.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(Extract|Parse|Open)$'
+
+  - id: path-guard-audit-probe-complete-guard-typescript
+    message: >-
+      Site probe: recognized complete-guard call shape (canonicalize +
+      root boundary, recognized by callee name). Consumed by the
+      path-guard-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: complete_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    patterns:
+      - pattern: $GUARD(...)
+      - metavariable-regex:
+          metavariable: $GUARD
+          regex: '(?i)((.*[._])?(safe_?[Jj]oin|is_?[Pp]ath_?[Ii]nside|isPathInside|assert_?[Uu]nder_?[Rr]oot|assertUnderRoot|resolve_?[Aa]nd_?[Cc]heck|resolveAndCheck|within_?[Rr]oot|withinRoot|is_?[Ww]ithin_?[Dd]irectory|isWithinDirectory|is_?[Ss]afe_?[Pp]ath|isSafePath|safe_?[Pp]ath|safePath|secure_?[Jj]oin|secureJoin|resolve_?[Ww]ithin|resolveWithin|assert_?[Ii]nside|contained_?[Pp]ath|is_?[Ii]nside_?[Rr]oot|assert_?[Uu]nder_?[Bb]ase|check_?[Pp]ath_?[Ii]nside|guard_?[Pp]ath|assert_?[Ss]afe_?[Pp]ath|ensure_?[Pp]ath_?[Ii]nside))[a-zA-Z_0-9]*'
+
+  - id: path-guard-audit-probe-intervening-validation-typescript
+    message: >-
+      Site probe: bounded intervening call or check-and-throw whose shape
+      reads as validation. Consumed by the path-guard-audit CLI site
+      resolution; a hit with no higher-precedence match resolves the site
+      to "guard detected, shape unrecognized, manual review".
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: intervening_validation
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Two bounded shapes: a call whose callee name reads as validation,
+    # or a check-and-reject (an `if` block containing `throw` or
+    # `return`). Parse
+    # helpers (path.normalize, path.resolve) are deliberately absent:
+    # normalization alone is not a validation attempt.
+    pattern-either:
+      - patterns:
+          - pattern: $CALL(...)
+          - metavariable-regex:
+              metavariable: $CALL
+              regex: '(?i)(^|[.])([a-zA-Z_0-9]*(valid|check|verif|assert|is_?[Ss]afe|is_?[Aa]llowed|is_?[Ii]nside|is_?[Uu]nder|ensure|saniti[sz]e|guard|allow|block|deny|filter|inspect|secure|protect|contain|inside|normaliz|canonic|resolv|clean|confine|restrict|trust)[a-zA-Z_0-9]*)$'
+      - pattern: |
+          if ($COND) {
+            ...
+            throw $E;
+            ...
+          }
+      # check-and-return gated on a confinement-looking condition (see
+      # the Python probe for the rationale).
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  if ($COND) {
+                    ...
+                    return;
+                    ...
+                  }
+              - pattern: |
+                  if ($COND) {
+                    ...
+                    return $V;
+                    ...
+                  }
+          - metavariable-regex:
+              metavariable: $COND
+              regex: '(?i).*(isRelative|is_?relative|startsWith|endsWith|includes|include|within|allow|valid|resolve|realpath|normalize|absolut|canonic|sanitiz|escape|traversal|outside|inside|contain|prefix|basename|member|link|isFile|exists).*'

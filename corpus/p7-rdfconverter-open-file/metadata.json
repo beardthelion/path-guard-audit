@@ -1,0 +1,41 @@
+{
+  "instance_id": "p7-rdfconverter-open-file",
+  "repo": "Mat-O-Lab/RDFConverter",
+  "repo_url": "https://github.com/Mat-O-Lab/RDFConverter",
+  "license_spdx": "Apache-2.0",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "0d81f4d1ba5cdc1a8c2f39071525ec1191469b1f",
+      "files": [
+        {
+          "upstream_path": "app.py",
+          "corpus_path": "corpus/p7-rdfconverter-open-file/vulnerable/app.py",
+          "labeled_lines": [
+            284,
+            322
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P1",
+      "P7"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/Mat-O-Lab/RDFConverter"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "open_file(uri) decodes a caller URI: filedata = open(unquote(uri_parsed.path)) -- percent-decoded URI path reaches open() with no re-validation (P7); unquote(...).rsplit/split shaping is P1.",
+  "last_verified": "2026-10-10"
+}

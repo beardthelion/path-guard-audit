@@ -1,0 +1,321 @@
+rules:
+  - id: path-guard-audit-p6-platform-quirk-typescript
+    mode: taint
+    message: >-
+      Caller-shaped path input reaches a POSIX-only or scheme-textual
+      guard shape (P6: platform quirk): a `..` membership test that
+      splits only on `/` (misses `..\` on Windows), a textual
+      `file:`/`file://` strip (a URI is not a filesystem path), or a
+      `:`-split shape that mishandles drive letters and alternate data
+      streams.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P6
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+        - "CWE-23: Relative Path Traversal"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, typescript, javascript]
+      references:
+        - docs/source-sink-matrix.md
+    pattern-sources:
+      # Path-named parameters of any function, method, or arrow,
+      # registered or not: `function serve(path)` is an entry point for
+      # this analyzer.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|member_name|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  function $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async function $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  (..., $ARG, ...) => { ... }
+              - pattern-inside: |
+                  async (..., $ARG, ...) => { ... }
+              - pattern-inside: |
+                  (..., $ARG, ...) => $E
+              - pattern-inside: |
+                  async (..., $ARG, ...) => $E
+      # Suffix forms: filePath, fileName, memberName, out_dir, ...
+      # Case-sensitive camel halves keep `dump`-style names out.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^([a-z_0-9]+_(path|filepath|filename|file|dir|directory|folder|dest|destination|target|member|entry|key|name)|[a-z_0-9]+(Path|Filepath|FileName|Filename|File|Dir|Directory|Folder|Dest|Destination|Target|Member|Entry|Key|Name))(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  function $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async function $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async $F(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  (..., $ARG, ...) => { ... }
+              - pattern-inside: |
+                  async (..., $ARG, ...) => { ... }
+      # Verb-named route handlers (Next.js): the request parameter of a
+      # GET/POST/... named export or declaration.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(req|request|ctx|event)$'
+          - metavariable-regex:
+              metavariable: $H
+              regex: '^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$'
+          - pattern-either:
+              - pattern-inside: |
+                  function $H(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async function $H(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  const $H = (..., $ARG, ...) => { ... }
+              - pattern-inside: |
+                  const $H = async (..., $ARG, ...) => { ... }
+      # Web framework registrations: every parameter of an inline
+      # callback passed to a router verb (Express/Fastify `app.get(...)`,
+      # `router.post(...)`, `server.use(...)`) is caller-shaped; the
+      # request object carries path fields.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $M
+              regex: '(?i)^(get|post|put|delete|del|patch|head|options|all|use|route|ws|static|sendFile)$'
+          - pattern-either:
+              - pattern-inside: |
+                  $APP.$M(..., ($ARG, ...) => { ... })
+              - pattern-inside: |
+                  $APP.$M(..., async ($ARG, ...) => { ... })
+              - pattern-inside: |
+                  $APP.$M(..., function $H($ARG, ...) { ... })
+              - pattern-inside: |
+                  $APP.$M(..., async function $H($ARG, ...) { ... })
+      # Agent/tool registrations (one entry family among several): any
+      # parameter of a callback registered through a tool registration
+      # method (tool, registerTool, setRequestHandler, and the
+      # prompt/resource variants). Also covers object-destructured
+      # parameters such as `async ({ path }) => ...`.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource|command|addCommand)$'
+          - pattern-either:
+              - pattern-inside: |
+                  $SRV.$REG(..., async (..., $ARG, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., (..., $ARG, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., async (..., $ARG, ...) => ...)
+              - pattern-inside: |
+                  $SRV.$REG(..., (..., $ARG, ...) => ...)
+              - pattern-inside: |
+                  $SRV.$REG(..., async function $H(..., $ARG, ...) { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., function $H(..., $ARG, ...) { ... })
+      - patterns:
+          - pattern: $PROP
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource|command|addCommand)$'
+          - pattern-either:
+              - pattern-inside: |
+                  $SRV.$REG(..., async ({ ..., $PROP, ... }, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., ({ ..., $PROP, ... }, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., async ({ ..., $PROP, ... }: $T, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., ({ ..., $PROP, ... }: $T, ...) => { ... })
+      # Dispatch-method source: a method, function declaration, or
+      # object-literal callback named like a tool dispatcher that takes
+      # an args/params/request parameter.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-zA-Z_0-9]*$'
+          - pattern-either:
+              - pattern-inside: |
+                  function $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async function $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  const $M = (..., $ARG, ...) => { ... }
+              - pattern-inside: |
+                  const $M = async (..., $ARG, ...) => { ... }
+      # Destructured path-named fields in a parameter signature:
+      # `function f({ path, name })`, `async run({ filePath }: T)`.
+      - patterns:
+          - pattern: $PROP
+          - metavariable-regex:
+              metavariable: $PROP
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|filePath|fileName|pathName|objectKey|memberName|destDir|targetPath|savePath|outFile|outDir)$'
+          - pattern-either:
+              - pattern-inside: |
+                  function $F({ ..., $PROP, ... }, ...) { ... }
+              - pattern-inside: |
+                  async function $F({ ..., $PROP, ... }, ...) { ... }
+              - pattern-inside: |
+                  $F({ ..., $PROP, ... }, ...) { ... }
+              - pattern-inside: |
+                  async $F({ ..., $PROP, ... }, ...) { ... }
+              - pattern-inside: |
+                  function $F({ ..., $PROP, ... }: $T, ...) { ... }
+              - pattern-inside: |
+                  async function $F({ ..., $PROP, ... }: $T, ...) { ... }
+              - pattern-inside: |
+                  $F({ ..., $PROP, ... }: $T, ...) { ... }
+              - pattern-inside: |
+                  async $F({ ..., $PROP, ... }: $T, ...) { ... }
+              - pattern-inside: |
+                  ({ ..., $PROP, ... }, ...) => { ... }
+              - pattern-inside: |
+                  async ({ ..., $PROP, ... }, ...) => { ... }
+              - pattern-inside: |
+                  ({ ..., $PROP, ... }: $T, ...) => { ... }
+              - pattern-inside: |
+                  async ({ ..., $PROP, ... }: $T, ...) => { ... }
+      # Path-named attribute reads off any object (upload objects, archive
+      # members, config objects): file.originalname, entry.path,
+      # member.name, opts.filename, ...
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(path|filepath|file_?path|filePath|filename|file_?name|fileName|pathname|path_?name|pathName|relative_?path|rel_?path|relativePath|dest|destination|target|object_?key|objectKey|member_?name|memberName|linkname|linkName|original_?filename|originalFilename|originalname|full_?path|fullPath|real_?path|realPath|abs_?path|absPath|save_?path|savePath|upload_?path|uploadPath|local_?path|localPath|cache_?path|cachePath|stored_?path|storedPath|arcname|arcName|orig_?filename)$'
+      # `.name` reads gated to member-ish receivers: entry.name,
+      # member.name, file.name, part.name. A bare `.name` on an
+      # arbitrary object is not a path.
+      - patterns:
+          - pattern: $X.name
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(member|entry|info|file|upload|part|blob|object|doc|asset|item|resource|tar|zip|arc|header|hdr)[a-z_0-9.]*'
+      # Path-named key reads: payload["path"], args["filename"],
+      # searchParams.get("file"), params["dir"], ...
+      - patterns:
+          - pattern-either:
+              - pattern: $X[$K]
+              - pattern: $X.get($K, ...)
+          - metavariable-regex:
+              metavariable: $K
+              regex: >-
+                (?i)^["'](path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path|file|filePath|fileName|objectKey)["']$
+      # HTTP request-object members (Express/Fastify/Next style): reads
+      # off a req/request/ctx receiver are caller-controlled.
+      - patterns:
+          - pattern: $REQ.$F
+          - metavariable-regex:
+              metavariable: $REQ
+              regex: '(.*\.)?(request|req|ctx)$'
+          - metavariable-regex:
+              metavariable: $F
+              regex: '^(args|GET|POST|query_params|path_params|form|data|json|params|param|querystring|nextUrl|searchParams|formData|values|query|body|files|file|stream|headers|multipart)$'
+      # Request member calls: req.param("name"), req.query.path covered
+      # above; also req.files/file and ctx.request member chains.
+      - patterns:
+          - pattern: $REQ.$F(...)
+          - metavariable-regex:
+              metavariable: $REQ
+              regex: '(.*\.)?(request|req|ctx)$'
+          - metavariable-regex:
+              metavariable: $F
+              regex: '^(param|get|formData|file|files|json|query|body|header|headers)$'
+      # Destructuring off a request member: const { path } = req.query,
+      # const { file } = req.body, ...
+      - patterns:
+          - pattern-either:
+              - pattern: const { ..., $PROP, ... } = $REQ.$A
+              - pattern: let { ..., $PROP, ... } = $REQ.$A
+              - pattern: var { ..., $PROP, ... } = $REQ.$A
+              - pattern: "{ ..., $PROP, ... } = $REQ.$A"
+          - metavariable-regex:
+              metavariable: $REQ
+              regex: '(.*\.)?(request|req|ctx)$'
+          - metavariable-regex:
+              metavariable: $A
+              regex: '^(query|body|params|nextUrl|searchParams|formData|files|file|headers|data)$'
+      # Destructuring a path-named field off any object:
+      # const { filename } = payload.
+      - patterns:
+          - pattern-either:
+              - pattern: const { ..., $PROP, ... } = $X
+              - pattern: let { ..., $PROP, ... } = $X
+              - pattern: var { ..., $PROP, ... } = $X
+          - metavariable-regex:
+              metavariable: $PROP
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|filePath|fileName|pathName|objectKey|memberName|destDir|targetPath|savePath|outFile|outDir)$'
+      # Archive member enumerators: each yielded entry is
+      # archive-writer shaped. Covers `for (const e of zip.entries())`,
+      # adm-zip `getEntries()`, and `zip.files` reads.
+      - pattern-either:
+          - pattern: $X.entries()
+          - pattern: $X.getEntries()
+          - pattern: $X.files
+      # yauzl/unzipper-style `on("entry", cb)` / `on("file", cb)` event
+      # payloads: the callback parameter is archive-writer shaped.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $EV
+              regex: '^(?:["\x27])(entry|file|data)["\x27]$'
+          - pattern-either:
+              - pattern-inside: |
+                  $Z.on($EV, ($ARG, ...) => { ... })
+              - pattern-inside: |
+                  $Z.on($EV, async ($ARG, ...) => { ... })
+              - pattern-inside: |
+                  $Z.on($EV, function($ARG, ...) { ... })
+    pattern-sinks:
+      # Sinks: the platform-quirk check applied to the tainted path.
+      - patterns:
+          - pattern-either:
+              # `..` membership on a `/`-only split misses `..\`.
+              - patterns:
+                  - pattern-either:
+                      - pattern: $P.split("/").includes($K)
+                      - pattern: $P.split('/').includes($K)
+                      - pattern: $P.split("/").indexOf($K)
+                      - pattern: $P.split('/').indexOf($K)
+                  - metavariable-regex:
+                      metavariable: $K
+                      regex: '^["\x27]\.{2}["\x27]$'
+              # file:/file:// scheme stripped textually.
+              - patterns:
+                  - pattern-either:
+                      - pattern: $P.replace($L, ...)
+                      - pattern: $P.replaceAll($L, ...)
+                  - metavariable-regex:
+                      metavariable: $L
+                      regex: '(?i)^(/[^/]*file:[^/]*/|["\x27]file:/?/?["\x27])'
+              # Colon splitting on the raw path: drive letters and ADS
+              # (`file.txt:ads`) do not survive a `:`-split guard.
+              - patterns:
+                  - pattern-either:
+                      - pattern: $P.split(":")
+                      - pattern: $P.split(':')
+          - focus-metavariable: $P

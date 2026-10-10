@@ -1,0 +1,17 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+
+# Fetched corpus materialization (third-party code at pinned SHAs)
+corpus/_fetched/
+
+# Atomic-write temp files from scripts/fetch_corpus.py (crash leftovers)
+corpus/.fetch-*
+corpus/.expected-*
+
+# Local planning artifacts (not project content)
+docs/plans/
+path-guard-audit-phase2.md
+.venv/

@@ -1,0 +1,61 @@
+{
+  "instance_id": "salt-archive-module",
+  "repo": "saltstack/salt",
+  "repo_url": "https://github.com/saltstack/salt",
+  "license_spdx": "Apache-2.0",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "f37cdcd1c93f778a84f83b3cc9933cac92d0456b",
+      "files": [
+        {
+          "upstream_path": "salt/modules/archive.py",
+          "corpus_path": "corpus/salt-archive-module/vulnerable/salt/modules/archive.py",
+          "labeled_lines": [
+            255,
+            310
+          ],
+          "role": "sink"
+        }
+      ]
+    },
+    "checklist": {
+      "sha": "f37cdcd1c93f778a84f83b3cc9933cac92d0456b",
+      "files": [
+        {
+          "upstream_path": "salt/modules/archive.py",
+          "corpus_path": "corpus/salt-archive-module/vulnerable/salt/modules/archive.py",
+          "labeled_lines": [
+            196,
+            197
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P0",
+      "P1",
+      "P2",
+      "P4",
+      "P8"
+    ],
+    "checklist": [
+      "P5"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/saltstack/salt"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "zip/unzip listing + extraction: member.filename joined into dest without a boundary check (P4 member shapes), os.symlink(os.path.join(dest, target)) (P5 checklist), startswith(cwd) prefix checks without resolve (P2), split-based name shaping (P1).",
+  "last_verified": "2026-10-10"
+}

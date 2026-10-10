@@ -1,0 +1,40 @@
+{
+  "instance_id": "checklist-mcp-filesystem",
+  "repo": "modelcontextprotocol/servers",
+  "repo_url": "https://github.com/modelcontextprotocol/servers",
+  "license_spdx": "MIT OR Apache-2.0",
+  "language": "typescript",
+  "tier": "checklist",
+  "source": "vendored",
+  "states": {
+    "entrypoints": {
+      "sha": "956d36f8a148908b2e2394669ef5ae1f1230c9e9",
+      "files": [
+        {
+          "upstream_path": "src/filesystem/index.ts",
+          "corpus_path": "corpus/checklist-mcp-filesystem/vulnerable/src/filesystem/index.ts",
+          "labeled_lines": [
+            400,
+            700
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "entrypoints": [
+      "P9"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Registered MCP filesystem tools (setRequestHandler CallTool + tool list). Each entry point is a P9 coverage candidate; the file's per-handler join/prefix shapes also surface as deterministic extras (non-gating).",
+  "last_verified": "2026-10-10"
+}

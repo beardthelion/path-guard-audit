@@ -1,0 +1,237 @@
+rules:
+  - id: path-guard-audit-p1-python
+    mode: taint
+    message: >-
+      Caller-shaped path input reaches a string-strip guard (replace,
+      split, sub, basename, secure_filename) that is the only validation
+      on the tainted path in this function: no canonicalize call
+      (realpath/resolve/abspath/normpath) intervenes (P1: `..` strip only).
+      Encoded variants and platform separators survive a textual strip.
+      classify.py suppresses the sibling P0 finding at the same site.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P1
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+        - "CWE-23: Relative Path Traversal"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, python]
+      references:
+        - docs/source-sink-matrix.md
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|member_name|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  async def $F(..., $ARG, ...):
+                    ...
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^([a-z_0-9]+_(path|filepath|filename|file|dir|directory|folder|dest|destination|target|member|entry|key|name)|[a-z_0-9]+(Path|Filepath|FileName|Filename|File|Dir|Directory|Folder|Dest|Destination|Target|Member|Entry|Key|Name))(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  async def $F(..., $ARG, ...):
+                    ...
+      - patterns:
+          - pattern: $X.$F
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)^(path|filepath|file_?path|filename|file_?name|pathname|path_?name|relative_?path|rel_?path|dest|destination|target|object_?key|member_?name|linkname|original_?filename|full_?path|real_?path|abs_?path|save_?path|upload_?path|local_?path|cache_?path|stored_?path)$'
+      - patterns:
+          - pattern: $X.name
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(member|entry|info|file|upload|part|blob|object|doc|asset|item|resource|tar|zip|arc)[a-z_0-9.]*'
+      - patterns:
+          - pattern-either:
+              - pattern: $X[$K]
+              - pattern: $X.get($K, ...)
+          - metavariable-regex:
+              metavariable: $K
+              regex: >-
+                (?i)^["'](path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)["']$
+      - patterns:
+          - pattern: $REQ.$F
+          - metavariable-regex:
+              metavariable: $REQ
+              regex: '(.*\.)?(request|req)$'
+          - metavariable-regex:
+              metavariable: $F
+              regex: '^(args|GET|POST|query_params|path_params|form|data|json|params|values|query|body|files|FILES|stream|headers|match_info|view_args|multipart)$'
+      - pattern-either:
+          - pattern: $X.namelist()
+          - pattern: $X.getnames()
+          - pattern: $X.infolist()
+          - pattern: $X.getmembers()
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(route|api_route|get|post|put|delete|patch|head|options|websocket|add_url_rule|api_view|action|command|expose)$'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)$'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  async def $M(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  def $M(..., $ARG, ...):
+                    ...
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+          - pattern-either:
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    def $M(..., $ARG, ...):
+                      ...
+                    ...
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    async def $M(..., $ARG, ...):
+                      ...
+                    ...
+    pattern-sinks:
+      # Sinks: the weak-guard shape -- a textual strip/split/sub applied
+      # to the tainted path. focus-metavariable binds the checked value so
+      # an unrelated string munge cannot launder the finding.
+      - patterns:
+          - pattern-either:
+              # str method strips on the tainted value.
+              - patterns:
+                  - pattern: $P.$M(...)
+                  - metavariable-regex:
+                      metavariable: $M
+                      regex: '^(replace|split|strip|lstrip|rstrip|removeprefix|removesuffix|translate|partition|rpartition)$'
+              # re module munging with the tainted value as subject.
+              - pattern-either:
+                  - pattern: re.sub($A, $B, $P, ...)
+                  - pattern: re.subn($A, $B, $P, ...)
+                  - pattern: re.split($A, $P, ...)
+              # basename/split family: strips directories, leaves no root
+              # confinement (and fails on the other platform's separator).
+              - pattern: os.path.basename($P, ...)
+              - pattern: os.path.split($P, ...)
+              - pattern: os.path.splitext($P, ...)
+              - pattern: posixpath.basename($P, ...)
+              - pattern: ntpath.basename($P, ...)
+              # Filename sanitizer helpers: secure_filename alone is not
+              # a guard (it strips but never enforces a root boundary).
+              - patterns:
+                  - pattern: $SANITIZE($P, ...)
+                  - metavariable-regex:
+                      metavariable: $SANITIZE
+                      regex: '(?i)((.*[._])?(secure_?filename|sanitize_?filename|sanitize_?name|safe_?filename|slugify|sanitize))[a-z_0-9]*'
+          - focus-metavariable: $P
+          # Exclusions: a function that also canonicalizes is more than
+          # strip-only (the weak strip is a detail, not the guard). Each
+          # not-inside entry lists one call; the deep-expression form
+          # covers calls nested in conditions and assignments.
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.realpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.abspath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.normpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... realpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... abspath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... normpath(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.resolve(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.canonicalize(...) ...>
+                ...

@@ -1,0 +1,132 @@
+rules:
+  - id: path-guard-audit-p4-extractall-unchecked-typescript
+    message: >-
+      An archive bulk-extract call (adm-zip extractAllTo, tar.x,
+      tar.extract, unzipper.Extract, decompress(...)) runs with no
+      per-member root check visible in the enclosing function (P4: Zip
+      Slip). A `../` entry name lands outside the destination.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P4
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, typescript, javascript, archive]
+      references:
+        - docs/source-sink-matrix.md
+    patterns:
+      - pattern-either:
+          - pattern: $Z.extractAllTo(...)
+          - pattern: $Z.extractEntryTo(...)
+          - pattern: $Z.extractall(...)
+          - pattern: $Z.extractAll(...)
+          - pattern: tar.x(...)
+          - pattern: tar.extract(...)
+          - pattern: $T.x(...)
+          - pattern: $T.extract(...)
+          - pattern: unzipper.Extract(...)
+          - pattern: unzipper.Parse(...)
+          - pattern: decompress(...)
+          - patterns:
+              - pattern: $Z.$M(...)
+              - metavariable-regex:
+                  metavariable: $Z
+                  regex: '(?i).*(zip|tar|arc|archive|unzip|pkg|adm)[a-z_0-9.()]*'
+              - metavariable-regex:
+                  metavariable: $M
+                  regex: '^(extract|extractAll|extractAllTo|extractEntryTo|extractEntry|unpack|x|decompress)$'
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.startsWith(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.endsWith(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.includes(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... path.isAbsolute(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... path.relative(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.isAbsolute(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... path.resolve(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... path.normalize(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... fs.realpath(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... fs.realpathSync(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... realpath(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... realpathSync(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+          ...
+          <... isPathInside(...) ...>
+          ...
+          }
+      - pattern-not-inside: |
+          {
+          ...
+          <... isPathWithin(...) ...>
+          ...
+          }
+      - pattern-not-inside: |
+          {
+          ...
+          <... isPathWithinAllowedDirectories(...) ...>
+          ...
+          }

@@ -1,0 +1,143 @@
+rules:
+  - id: path-guard-audit-p4-extractall-unchecked-python
+    message: >-
+      An archive bulk-extract call (extractall, unpack_archive) runs with
+      no per-member root check visible in the enclosing function (P4: Zip
+      Slip). A tarfile extractall without a `filter=` argument, a zipfile
+      extractall, or shutil.unpack_archive writes every member name the
+      archive carries; a `../` member lands outside the destination.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: P4
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [pathtraversal, python, archive]
+      references:
+        - docs/source-sink-matrix.md
+    # Search mode: the extract call is the finding when the enclosing
+    # function shows no member-validation vocabulary (a boundary check, a
+    # canonicalize call, a filter= argument, or an absolute-path test on
+    # member names). Validation factored into a helper is the documented
+    # ceiling; the finding still reports and reads as "no per-member
+    # check visible in this function".
+    patterns:
+      - pattern-inside: |
+          def $F(...):
+            ...
+      - pattern-either:
+          - patterns:
+              - pattern: $Z.extractall(...)
+              - pattern-not: $Z.extractall(..., filter=$X, ...)
+              - pattern-not: $Z.extractall(..., filter="$L", ...)
+          - pattern: shutil.unpack_archive(...)
+          - pattern: $Z._extract_member(...)
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.startswith(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.endswith(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.commonprefix(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.commonpath(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.is_relative_to(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.relative_to(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.relpath(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... os.path.isabs(...) ...>
+                ...
+      - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $X.is_absolute(...) ...>
+                ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... os.path.realpath(...) ...>
+            ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... os.path.abspath(...) ...>
+            ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... os.path.normpath(...) ...>
+            ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... realpath(...) ...>
+            ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... abspath(...) ...>
+            ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... normpath(...) ...>
+            ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... $X.resolve(...) ...>
+            ...
+      # A per-member loop that inspects member names (a `for` over the
+      # member enumerator whose body mentions member-name fields or a
+      # startswith/commonpath check) is a visible check: the boundary
+      # not-inside entries above already cover those bodies.
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... is_relative_to(...) ...>
+            ...
+      - pattern-not-inside: |
+          async def $F(...):
+            ...
+            <... is_relative_to(...) ...>
+            ...
+      - pattern-not-inside: |
+          def $F(...):
+            ...
+            <... relative_to(...) ...>
+            ...
+      - pattern-not-inside: |
+          async def $F(...):
+            ...
+            <... relative_to(...) ...>
+            ...

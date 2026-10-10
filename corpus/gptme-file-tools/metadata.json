@@ -1,0 +1,60 @@
+{
+  "instance_id": "gptme-file-tools",
+  "repo": "gptme/gptme",
+  "repo_url": "https://github.com/gptme/gptme",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "read": {
+      "sha": "292f8a5be5fba2d5ad1a0c616811fffd57c26001",
+      "files": [
+        {
+          "upstream_path": "gptme/tools/read.py",
+          "corpus_path": "corpus/gptme-file-tools/vulnerable/gptme/tools/read.py",
+          "labeled_lines": [
+            135,
+            175
+          ],
+          "role": "sink"
+        }
+      ]
+    },
+    "save": {
+      "sha": "292f8a5be5fba2d5ad1a0c616811fffd57c26001",
+      "files": [
+        {
+          "upstream_path": "gptme/tools/save.py",
+          "corpus_path": "corpus/gptme-file-tools/vulnerable/gptme/tools/save.py",
+          "labeled_lines": [
+            127,
+            262
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "read": [
+      "P0",
+      "P1"
+    ],
+    "save": [
+      "P0",
+      "P1",
+      "P2"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/gptme/gptme"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "read tool: default mode is unconfined (GPTME_READ_ROOT opt-in). path.open() on the caller path is P0; split('/') filename shaping is P1. The configured-root sites resolve unrecognized_guard.",
+  "last_verified": "2026-10-10"
+}

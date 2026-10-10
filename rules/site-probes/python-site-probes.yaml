@@ -1,0 +1,320 @@
+rules:
+  # Site-enumerator and guard-shape probes for the layered site
+  # resolution. These are search-mode rules: they mark locations, they do
+  # not issue verdicts. classify.py groups their hits by enclosing entry
+  # point (the site extent each handler_source match spans) and resolves
+  # each sink site per docs/source-sink-matrix.md.
+  #
+  # A site extent is any function that a source family can deliver a
+  # caller-shaped path into: registered entry points (route/tool
+  # decorators, web framework registrations), functions with path-named
+  # parameters, and functions containing path-named field reads, request-
+  # object member reads, or archive member reads. The extents exist so
+  # guard-shaped calls bind to the sink that consumes their input.
+  - id: path-guard-audit-probe-handler-source-python
+    message: >-
+      Site probe: entry-point candidate (source enumerator). Consumed by
+      the path-guard-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: handler_source
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      # Registered entry points: route decorators and agent/tool
+      # decorators spanning the decorated function. The decorator method
+      # name is the signal, not the receiver, so FastAPI/Starlette
+      # @router.get, Flask/Bottle @app.route/@get, Django REST
+      # @api_view/@action, FastMCP @tool and vendored variants all match.
+      - patterns:
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt|route|api_route|get|post|put|delete|patch|head|options|websocket|add_url_rule|api_view|action|command|expose)$'
+          - pattern-either:
+              - pattern: |
+                  @$DECO(...)
+                  def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO(...)
+                  async def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO
+                  def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO
+                  async def $F(...):
+                    ...
+      # Dispatch-method extents: a def/async def named like a tool
+      # dispatcher taking an args/params/request parameter, covering
+      # class-based registries where a registered callback delegates to
+      # `tool.execute(args)` and the sink lives in the method body.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  async def $M(..., $ARG, ...):
+                    ...
+              - pattern: |
+                  def $M(..., $ARG, ...):
+                    ...
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+      # Framework tool-entry methods: agent frameworks that name their
+      # entry `Tool.forward` or `BaseTool._run`/`_arun` deliver
+      # caller-produced args through methods on Tool-named classes. The
+      # class-name bound keeps `forward`/`run` from matching arbitrary
+      # helpers.
+      - patterns:
+          - pattern-inside: |
+              class $T(...):
+                ...
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - pattern-either:
+              - pattern: |
+                  async def $M(...):
+                    ...
+              - pattern: |
+                  def $M(...):
+                    ...
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+      # Path-named-parameter functions (exact names).
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern: |
+                  async def $F(..., $ARG, ...):
+                    ...
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '(?i)^(path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|member_name|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)(\W.*)?$'
+      # Path-named-parameter functions (suffix forms: save_path,
+      # fileName, memberName, out_dir, ...; camel halves case-sensitive
+      # so `dump`-style names stay out).
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern: |
+                  async def $F(..., $ARG, ...):
+                    ...
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^([a-z_0-9]+_(path|filepath|filename|file|dir|directory|folder|dest|destination|target|member|entry|key|name)|[a-z_0-9]+(Path|Filepath|FileName|Filename|File|Dir|Directory|Folder|Dest|Destination|Target|Member|Entry|Key|Name))(\W.*)?$'
+      # Functions containing path-named field reads, archive member
+      # enumerators, or request-object member reads. Member names here
+      # are broader than the taint source's receiver-gated list because
+      # an extent is only a bounding box.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  def $F(...):
+                    ...
+                    <... $X.$A ...>
+                    ...
+              - pattern: |
+                  async def $F(...):
+                    ...
+                    <... $X.$A ...>
+                    ...
+          - metavariable-regex:
+              metavariable: $A
+              regex: '^(path|filepath|file_?[Pp]ath|filename|file_?[Nn]ame|pathname|path_?[Nn]ame|relative_?[Pp]ath|rel_?[Pp]ath|dest|destination|target|object_?[Kk]ey|member_?[Nn]ame|linkname|original_?[Ff]ilename|full_?[Pp]ath|real_?[Pp]ath|abs_?[Pp]ath|save_?[Pp]ath|upload_?[Pp]ath|local_?[Pp]ath|cache_?[Pp]ath|name|args|GET|POST|query_params|path_params|form|data|json|params|param|values|query|body|files|FILES|stream|headers|match_info|view_args|multipart|namelist|getnames|infolist|getmembers|getinfo|getmember|entries|read)$'
+      # Functions containing path-named key reads: payload["path"],
+      # args.get("filename").
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  def $F(...):
+                    ...
+                    <... $X[$K] ...>
+                    ...
+              - pattern: |
+                  async def $F(...):
+                    ...
+                    <... $X[$K] ...>
+                    ...
+              - pattern: |
+                  def $F(...):
+                    ...
+                    <... $X.get($K, ...) ...>
+                    ...
+              - pattern: |
+                  async def $F(...):
+                    ...
+                    <... $X.get($K, ...) ...>
+                    ...
+          - metavariable-regex:
+              metavariable: $K
+              regex: >-
+                (?i)^["'](path|filepath|file_path|file|filename|file_name|pathname|path_name|relative_path|rel_path|dest|dst|destination|target|name|key|object_key|member|entry|root|directory|dir|folder|basename|base_name|full_?path|abs_?path)["']$
+
+  - id: path-guard-audit-probe-path-sink-python
+    message: >-
+      Site probe: filesystem/archive sink call (sink enumerator). Consumed
+      by the path-guard-audit CLI site resolution; not a standalone
+      finding.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: path_sink
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Identical sink vocabulary to rules/python/p0-unguarded-path.yaml so
+    # every sink the taint rules can fire on is also enumerated here.
+    pattern-either:
+      # Builtin and module-qualified opens.
+      - pattern-either:
+          - pattern: open(...)
+          - pattern: builtins.open(...)
+          - pattern: io.open(...)
+          - pattern: codecs.open(...)
+          - pattern: gzip.open(...)
+          - pattern: bz2.open(...)
+          - pattern: lzma.open(...)
+          - pattern: os.open(...)
+          - pattern: tarfile.open(...)
+          - pattern: zipfile.ZipFile(...)
+          - pattern: gzip.GzipFile(...)
+          - pattern: bz2.BZ2File(...)
+          - pattern: lzma.LZMAFile(...)
+      # os module filesystem calls.
+      - patterns:
+          - pattern: os.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(remove|unlink|rename|replace|rmdir|removedirs|mkdir|makedirs|listdir|scandir|walk|truncate|chmod|chown|lchown|utime|link|symlink|mknod|chdir)$'
+      # shutil filesystem calls.
+      - patterns:
+          - pattern: shutil.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(copy|copy2|copyfile|copyfileobj|copytree|move|rmtree|chown|unpack_archive|make_archive)$'
+      # glob list sinks.
+      - patterns:
+          - pattern: glob.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(glob|iglob)$'
+      # Path-object methods on any receiver: p.read_text(),
+      # Path(name).open(), p.mkdir(). The receiver expression is the
+      # carrier; the call is the sink.
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(read_text|read_bytes|write_text|write_bytes|iterdir|symlink_to|link_to|hardlink_to|touch)$'
+      # Path-object verbs that also exist on unrelated objects are
+      # receiver-gated so db.open()/conn.mkdir() stay out: the receiver
+      # must read as a path object.
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(path|file|dir|folder|dest|target|root|entry|member)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(open|mkdir|rename|replace|unlink|rmdir|glob|rglob|chmod|touch)$'
+      # Extract methods on archive receivers.
+      - patterns:
+          - pattern: $X.$M(...)
+          - metavariable-regex:
+              metavariable: $X
+              regex: '(?i).*(zip|tar|arc|archive|zf|tf|pkg)[a-z_0-9.()]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(extract|extractall|extractfile|_extract_member|open)$'
+      # Web response / static-file helpers.
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(?i)((.*[._])?(send_?file|send_?from_?directory|sendfile|x_?sendfile|FileResponse|StaticFiles|serve_?file|serve_?static|attachment))$'
+
+  - id: path-guard-audit-probe-complete-guard-python
+    message: >-
+      Site probe: recognized complete-guard call shape (canonicalize +
+      root boundary + platform policy, recognized by callee name).
+      Consumed by the path-guard-audit CLI site resolution; not a
+      standalone finding.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: complete_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # The same callee-name vocabulary as the P0 sanitizer. A site whose
+    # extent contains this call resolves to recognized-complete unless a
+    # weak-class finding outranks it.
+    patterns:
+      - pattern: $GUARD(...)
+      - metavariable-regex:
+          metavariable: $GUARD
+          regex: '(?i)((.*[._])?(safe_?join|is_?path_?inside|assert_?under_?root|resolve_?and_?check|within_?root|is_?within_?directory|is_?safe_?path|safe_?path|secure_?join|resolve_?within|assert_?inside|contained_?path|is_?inside_?root|assert_?under_?base|check_?path_?inside|guard_?path|assert_?safe_?path|ensure_?path_?inside))[a-z_0-9]*'
+
+  - id: path-guard-audit-probe-intervening-validation-python
+    message: >-
+      Site probe: bounded intervening call or check-and-throw whose shape
+      reads as validation. Consumed by the path-guard-audit CLI site
+      resolution; a hit with no higher-precedence match resolves the site
+      to "guard detected, shape unrecognized, manual review".
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: intervening_validation
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Two bounded shapes: a call whose callee name reads as validation, or
+    # a check-and-reject (an `if` block containing `raise`, `return`, or
+    # `continue`). Overlap with
+    # the complete-guard vocabulary is intentional; the complete-guard
+    # probe wins by precedence at classify time. Parse helpers
+    # (`abspath`, `normpath`, `resolve`) are deliberately absent from the
+    # regex: a normalization call alone is not a validation attempt, and
+    # the matrix assigns normalize-only paths to P3.
+    pattern-either:
+      - patterns:
+          - pattern: $CALL(...)
+          - metavariable-regex:
+              metavariable: $CALL
+              regex: '(?i)^[a-z_0-9.()]*[a-z_0-9]*(valid|check|verif|assert|is_?safe|is_?allowed|is_?inside|is_?under|ensure|saniti[sz]e|guard|allow|block|deny|filter|inspect|secure|protect|contain|inside|normaliz|canonic|resolv|clean|confine|restrict|trust)[a-z_0-9]*$'
+      - pattern: |
+          if $COND:
+            ...
+            raise $E
+            ...
+      # check-and-return gated on a confinement-looking condition:
+      # `if not p.is_relative_to(root): return` is a boundary check;
+      # `if p is None: return` is not a traversal guard.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  if $COND:
+                    ...
+                    return
+                    ...
+              - pattern: |
+                  if $COND:
+                    ...
+                    return $V
+                    ...
+          - metavariable-regex:
+              metavariable: $COND
+              regex: '(?i).*(is_?relative|startswith|endswith|include|within|allow|valid|resolve|realpath|normpath|normaliz|absolut|canonic|sanitiz|escape|traversal|outside|inside|contain|prefix|basename|member|link|isfile|exists).*'

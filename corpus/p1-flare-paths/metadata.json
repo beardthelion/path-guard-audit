@@ -1,0 +1,41 @@
+{
+  "instance_id": "p1-flare-paths",
+  "repo": "FlintSH/Flare",
+  "repo_url": "https://github.com/FlintSH/Flare",
+  "license_spdx": "MIT",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "c9105238c062e3fc1033610502965ad553818b73",
+      "files": [
+        {
+          "upstream_path": "lib/security/paths.ts",
+          "corpus_path": "corpus/p1-flare-paths/vulnerable/lib/security/paths.ts",
+          "labeled_lines": [
+            4,
+            27
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P1",
+      "P8"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/FlintSH/Flare"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "sanitizeName strip-by-regex (P1) next to an unanchored/mixed allowlist shape (P8); file also contains a real resolve+startsWith(root+sep) complete guard (resolveWithinRoot), a nice contrast site.",
+  "last_verified": "2026-10-10"
+}
