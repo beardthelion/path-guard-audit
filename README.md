@@ -110,7 +110,8 @@ point (the "site"), the CLI resolves:
    condition boundary-checks that variable with a separator-joined
    prefix (`v.startswith(root + os.sep)`, `v.startsWith(root +
    path.sep)`) or `v.is_relative_to(root)`. The checked variable must
-   also appear in a sink call's first argument, so a boundary check on
+   also appear in a sink call's first argument or carry the sink as a
+   method receiver (`checked.write_text(...)`), so a boundary check on
    an unrelated value does not clear the site. Sites carrying other
    classes (P1 strip-only, P7, P8) stay deterministic: the check does
    not cure those bugs.
@@ -134,7 +135,7 @@ Near-misses that stay findings: `startswith(root)` with no separator
 join (sibling prefixes pass), a `startswith` on a variable that was
 never canonicalized, a boundary condition with no reject arm, and a
 canonical-boundary check whose checked variable is not the one the sink
-consumes.
+consumes (argument or method receiver).
 
 ## Clean results
 

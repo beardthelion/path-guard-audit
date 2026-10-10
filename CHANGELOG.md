@@ -12,7 +12,8 @@ real-world smoke hits:
   `path.normalize`) and a reject-arm `if` that boundary-checks the same
   variable (`v.startswith(root + os.sep)`-with-separator,
   `v.is_relative_to(root)`; `v.startsWith(root + path.sep)`). Resolution
-  requires the checked variable to reach a sink's first argument, and
+  requires the checked variable to reach a sink's first argument or
+  carry the sink as a method receiver, and
   only join/member classes (P2, P3, P4) clear; other classes stay
   deterministic. Near-misses still reported: `startswith(root)` without
   a separator join, checks on un-canonicalized values, conditions with

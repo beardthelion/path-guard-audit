@@ -176,6 +176,14 @@ _CHECKED_VAR_RE = re.compile(
     r"(startswith|startsWith|is_relative_to|relative_to)\s*\("
 )
 
+# Receiver of a method-call sink: ``file_path.write_text(...)`` and
+# ``file_path.parent.mkdir(...)`` carry the path in the receiver chain,
+# not the first argument, so a canonical-boundary check on that variable
+# is bound through the receiver rather than the argument list.
+_CALL_RECEIVER_RE = re.compile(
+    r"(?<![\w$])(\w[\w$]*)\s*(?:\.[\w$]+)+\s*\("
+)
+
 
 def _balanced_arg(text: str, open_paren: int) -> str:
     """Text between ``text[open_paren]`` and its matching close paren."""
@@ -771,15 +779,23 @@ def classify_results(
         def canon_bound() -> bool:
             # Strict binding for canonical-boundary probes: the
             # *checked* variable (not just any identifier in the `if`)
-            # must appear in a sink's first argument, so a guard on an
-            # unrelated value cannot launder the site.
-            if not sink_args:
+            # must appear in a sink's first argument or carry the sink
+            # as a method receiver (``checked.write_text(...)``), so a
+            # guard on an unrelated value cannot launder the site.
+            if not sink_args and not site.sink_results:
                 return False
+            carriers = sink_args | {
+                m.group(1)
+                for s in site.sink_results
+                for m in _CALL_RECEIVER_RE.finditer(
+                    _hit_text(s, root, lines_cache)
+                )
+            }
             for r in site.canon_guard_results:
                 checked = _canon_checked_vars(
                     _hit_text(r, root, lines_cache)
                 )
-                if checked & sink_args:
+                if checked & carriers:
                     return True
             return False
 

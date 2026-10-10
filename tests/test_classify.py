@@ -1058,3 +1058,50 @@ def test_non_tar_receiver_stays_p4(tmp_path):
     [site] = result["sites"]
     assert site["resolution"] == "deterministic"
     assert site["classes"] == ["P4"]
+
+
+def test_canonical_boundary_receiver_carried_sink(tmp_path):
+    # file_path.write_text(...) carries the path in the receiver, not the
+    # first arg: the canon check on file_path must still bind.
+    (tmp_path / "skills.py").write_text(
+        "async def download_skill(client, skill_name, target_dir):\n"
+        "    file_path = (target_dir / skill_name).resolve()\n"
+        "    for info in files():\n"
+        "        p = (file_path / info.path).resolve()\n"
+        "        if not p.is_relative_to(file_path):\n"
+        "            continue\n"
+        "        p.parent.mkdir(parents=True, exist_ok=True)\n"
+        "        p.write_text(info.text, encoding='utf-8')\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("skills.py", 1, 8),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "skills.py",
+                    8,
+                    "        p.write_text(info.text, encoding='utf-8')",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "skills.py",
+                    8,
+                    "        p.write_text(info.text, encoding='utf-8')",
+                    {"guard_class": "P4"},
+                ),
+                canon_probe(
+                    "skills.py",
+                    5,
+                    6,
+                    "        if not p.is_relative_to(file_path):\n"
+                    "            continue",
+                ),
+            ],
+            scanned=["skills.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "recognized_complete"
