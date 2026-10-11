@@ -378,21 +378,52 @@ def _relpath_targets(lines: list[str], diff_vars: set[str]) -> set[str]:
 
 
 def _manifest_dep_version(
-    target_root: Path | None, package: str
+    target_root: Path | None,
+    package: str,
+    result_path: str | None = None,
 ) -> str | None:
     """Exact installed version of ``package`` from target manifests.
 
     Consults package-lock.json (resolved ``node_modules/<pkg>`` version)
-    and package.json (exact pins only; ranges prove nothing). Returns
-    None when no evidence exists. Cheap and offline: two JSON reads at
-    the target root, no registry contact.
+    and package.json (exact pins only; ranges prove nothing). The search
+    starts at the finding's directory and walks up to the target root,
+    so a monorepo's per-package lockfile wins over the repo root.
+    Returns None when no evidence exists. Cheap and offline: JSON reads
+    only, no registry contact.
     """
     import json as _json
 
     if target_root is None:
         return None
     root = target_root if target_root.is_dir() else target_root.parent
-    lock = root / "package-lock.json"
+    root = root.resolve()
+    start = (
+        (root / result_path).parent
+        if result_path
+        else root
+    )
+    start = start.resolve()
+    # Walk from the finding's directory up to (and including) root.
+    dirs: list[Path] = []
+    cur = start
+    while True:
+        dirs.append(cur)
+        if cur == root or cur.parent == cur:
+            break
+        cur = cur.parent
+    if root not in dirs:
+        dirs.append(root)
+    for d in dirs:
+        version = _manifest_version_at(d, package, _json)
+        if version is not None:
+            return version
+    return None
+
+
+def _manifest_version_at(
+    directory: Path, package: str, _json
+) -> str | None:
+    lock = directory / "package-lock.json"
     if lock.is_file():
         try:
             data = _json.loads(lock.read_text(encoding="utf-8"))
@@ -409,7 +440,7 @@ def _manifest_dep_version(
             )
         if isinstance(version, str) and _EXACT_VERSION.match(version):
             return version
-    manifest = root / "package.json"
+    manifest = directory / "package.json"
     if manifest.is_file():
         try:
             data = _json.loads(manifest.read_text(encoding="utf-8"))
@@ -480,7 +511,9 @@ def _dependency_guard_note(
                 "member names at extraction"
             ),
         }
-    version = _manifest_dep_version(target_root, package)
+    version = _manifest_dep_version(
+        target_root, package, result.get("path", "")
+    )
     if version is not None:
         vt = _version_tuple(version)
         if vt is not None and vt < minimum:

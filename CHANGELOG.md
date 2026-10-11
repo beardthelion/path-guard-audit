@@ -48,6 +48,12 @@ real-world smoke hits:
 - `--process-timeout` flag on `scan` and `corpus-validate`: raises the
   wall-clock bound on the semgrep subprocess (default 1800s), needed
   for scans of large monorepos.
+- Manifest version evidence walks up from the finding's directory to
+  the target root, so a monorepo's per-package `package-lock.json`
+  (e.g. `core/package-lock.json`) is consulted instead of only the
+  repo root. Verified on a real monorepo: lightrail's `core/` pin
+  `adm-zip 0.5.10` now reads as confirmed-below-minimum evidence, which
+  correctly keeps the deterministic P4.
 - Relpath-diff canonical boundary: `d = os.path.relpath(v, root)` /
   `d = path.relative(root, v)` followed by a reject-arm
   `d.startswith('..')` check resolves recognized_complete, with binding

@@ -3,7 +3,11 @@
 All inputs are synthetic semgrep JSON payloads; no semgrep invocation.
 """
 
-from path_guard_audit.classify import classify_results, is_test_path
+from path_guard_audit.classify import (
+    _manifest_dep_version,
+    classify_results,
+    is_test_path,
+)
 
 
 def mk_result(check_id, path, start, end=None, metadata=None, message=""):
@@ -1583,3 +1587,59 @@ def test_relpath_ts_relative_binds_second_arg(tmp_path):
     )
     [site] = result["sites"]
     assert site["resolution"] == "recognized_complete"
+
+
+def test_manifest_version_nearest_lockfile(tmp_path):
+    # Monorepo: finding lives in core/, whose package-lock pins the
+    # vulnerable version; the target root's lockfile does not exist.
+    (tmp_path / "core").mkdir()
+    (tmp_path / "core" / "package-lock.json").write_text(
+        '{"packages": {"node_modules/adm-zip": {"version": "0.5.10"}}}'
+    )
+    version = _manifest_dep_version(
+        tmp_path, "adm-zip", "core/src/x.ts"
+    )
+    assert version == "0.5.10"
+
+
+def test_manifest_version_root_fallback(tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"dependencies": {"adm-zip": "0.6.1"}}'
+    )
+    version = _manifest_dep_version(
+        tmp_path, "adm-zip", "src/x.ts"
+    )
+    assert version == "0.6.1"
+
+
+def test_dep_guard_below_min_keeps_p4(tmp_path):
+    # Nearest lockfile pins adm-zip 0.5.10 (< 0.6.1): the P4 stays
+    # deterministic rather than demoting to a note.
+    (tmp_path / "core" / "src").mkdir(parents=True)
+    (tmp_path / "core" / "package-lock.json").write_text(
+        '{"packages": {"node_modules/adm-zip": {"version": "0.5.10"}}}'
+    )
+    (tmp_path / "core" / "src" / "up.ts").write_text(
+        "import AdmZip from 'adm-zip';\n"
+        "export function up(zip) {\n"
+        "  zip.extractAllTo('/tmp/x', true);\n"
+        "}\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.typescript.p4",
+                    "core/src/up.ts",
+                    3,
+                    "  zip.extractAllTo('/tmp/x', true);",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["core/src/up.ts"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]
