@@ -1219,3 +1219,94 @@ def test_unpack_archive_stays_p4(tmp_path):
     [site] = result["sites"]
     assert site["resolution"] == "deterministic"
     assert site["classes"] == ["P4"]
+
+
+def test_canonical_boundary_alias_through_wrapper(tmp_path):
+    # langflow download_profile_picture shape: the checked var is
+    # `candidate`, the sink consumes `file_path = Path(candidate)`.
+    (tmp_path / "files.py").write_text(
+        "async def download_profile_picture(folder, name):\n"
+        "    candidate = os.path.realpath(os.path.join(base, name))\n"
+        "    if candidate != base and not candidate.startswith(base + os.sep):\n"
+        "        raise HTTPException(404)\n"
+        "    file_path = Path(candidate)\n"
+        "    return open(file_path)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("files.py", 1, 6),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "files.py",
+                    6,
+                    "    return open(file_path)",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "files.py",
+                    6,
+                    "    return open(file_path)",
+                    {"guard_class": "P3"},
+                ),
+                canon_probe(
+                    "files.py",
+                    3,
+                    4,
+                    "    if candidate != base and not candidate.startswith(base + os.sep):\n"
+                    "        raise HTTPException(404)",
+                ),
+            ],
+            scanned=["files.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "recognized_complete"
+
+
+def test_canonical_boundary_appended_component_stays(tmp_path):
+    # derived = checked / 'sub' appends a component: it must NOT
+    # inherit the boundary check.
+    (tmp_path / "files.py").write_text(
+        "async def get(name):\n"
+        "    candidate = os.path.realpath(os.path.join(base, name))\n"
+        "    if not candidate.startswith(base + os.sep):\n"
+        "        raise HTTPException(404)\n"
+        "    derived = candidate + '/evil'\n"
+        "    return open(derived)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("files.py", 1, 6),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "files.py",
+                    6,
+                    "    return open(derived)",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "files.py",
+                    6,
+                    "    return open(derived)",
+                    {"guard_class": "P3"},
+                ),
+                canon_probe(
+                    "files.py",
+                    3,
+                    4,
+                    "    if not candidate.startswith(base + os.sep):\n"
+                    "        raise HTTPException(404)",
+                ),
+            ],
+            scanned=["files.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P3"]

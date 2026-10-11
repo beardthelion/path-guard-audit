@@ -266,9 +266,12 @@ The metavariable for the checked variable must unify across both
 clauses, so a check on a value that was never canonicalized cannot
 match. At resolution time `classify.py` then requires the *checked
 variable* (parsed out of the probe's condition, not any identifier in
-the `if`) to appear in a sink call's first argument or to carry the
+the `if`) to appear in a sink call's first argument, to carry the
 sink as a method receiver (`checked.write_text(...)`,
-`checked.parent.mkdir(...)`). The stricter
+`checked.parent.mkdir(...)`), or to be assigned verbatim into the sink
+variable inside the same function (`sink_var = checked` or a
+single-argument `Path(checked)` wrapper; an expression appending path
+components never binds). The stricter
 binding exists because the probe already proves the check is a real
 boundary check; the only laundering left is checking the wrong path.
 

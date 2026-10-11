@@ -200,6 +200,36 @@ _CALL_RECEIVER_RE = re.compile(
     r"(?<![\w$])(\w[\w$]*)\s*(?:\.[\w$]+)+\s*\("
 )
 
+# Pass-through assignment of a checked value: ``file_path = candidate``
+# or a single-argument wrapper ``file_path = Path(candidate)``. Multi-arg
+# calls and any expression appending components do not match, so a derived
+# path cannot silently inherit the boundary check.
+_CANON_ALIAS_RE = re.compile(
+    r"^\s*(\w[\w$]*)\s*=\s*"
+    r"(?:[\w$.]+\(\s*(\w[\w$]*)\s*\)|(\w[\w$]*))\s*(?:#.*)?$"
+)
+
+
+def _canon_bound_vars(lines: list[str], checked: set[str]) -> set[str]:
+    """Checked vars plus anything assigned directly from them.
+
+    Chains are resolved to a fixpoint so ``a = checked`` and
+    ``b = a`` both bind. Only the site's own function extent is scanned.
+    """
+    bound = set(checked)
+    changed = True
+    while changed:
+        changed = False
+        for line in lines:
+            m = _CANON_ALIAS_RE.match(line)
+            if not m:
+                continue
+            source = m.group(2) or m.group(3)
+            if source in bound and m.group(1) not in bound:
+                bound.add(m.group(1))
+                changed = True
+    return bound
+
 
 def _balanced_arg(text: str, open_paren: int) -> str:
     """Text between ``text[open_paren]`` and its matching close paren."""
@@ -826,11 +856,20 @@ def classify_results(
                     _hit_text(s, root, lines_cache)
                 )
             }
+            site_lines = _file_lines(site.path, root, lines_cache)
+            extent_lines = (
+                site_lines[site.start_line - 1 : site.end_line]
+                if site_lines
+                else []
+            )
             for r in site.canon_guard_results:
                 checked = _canon_checked_vars(
                     _hit_text(r, root, lines_cache)
                 )
-                if checked & carriers:
+                if (
+                    checked
+                    and _canon_bound_vars(extent_lines, checked) & carriers
+                ):
                     return True
             return False
 

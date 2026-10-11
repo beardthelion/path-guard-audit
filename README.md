@@ -110,9 +110,11 @@ point (the "site"), the CLI resolves:
    condition boundary-checks that variable with a separator-joined
    prefix (`v.startswith(root + os.sep)`, `v.startsWith(root +
    path.sep)`) or `v.is_relative_to(root)`. The checked variable must
-   also appear in a sink call's first argument or carry the sink as a
-   method receiver (`checked.write_text(...)`), so a boundary check on
-   an unrelated value does not clear the site. Sites carrying other
+   also appear in a sink call's first argument, carry the sink as a
+   method receiver (`checked.write_text(...)`), or be assigned verbatim
+   into the sink variable (`file_path = candidate` or a single-argument
+   `Path(candidate)` wrapper; appended components never bind), so a
+   boundary check on an unrelated value does not clear the site. Sites carrying other
    classes (P1 strip-only, P7, P8) stay deterministic: the check does
    not cure those bugs.
 2. Otherwise, if a deterministic weak-class finding (P1-P4, P6-P8) fired
