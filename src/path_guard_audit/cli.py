@@ -18,7 +18,11 @@ from path_guard_audit import classify, corpus, report, runner
 
 def _cmd_scan(args: argparse.Namespace) -> int:
     try:
-        run = runner.run_scan(args.path, timeout=args.timeout)
+        run = runner.run_scan(
+            args.path,
+            timeout=args.timeout,
+            process_timeout=args.process_timeout,
+        )
     except runner.ScanError as exc:
         print(f"path-guard-audit: {exc}", file=sys.stderr)
         return 2
@@ -59,7 +63,11 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
 def _cmd_corpus_validate(args: argparse.Namespace) -> int:
     try:
-        rep = corpus.validate_corpus(args.corpus, timeout=args.timeout)
+        rep = corpus.validate_corpus(
+            args.corpus,
+            timeout=args.timeout,
+            process_timeout=args.process_timeout,
+        )
     except (corpus.CorpusError, runner.ScanError) as exc:
         print(f"path-guard-audit: {exc}", file=sys.stderr)
         return 2
@@ -99,6 +107,13 @@ def main(argv: list[str] | None = None) -> int:
             type=positive_float,
             default=runner.DEFAULT_TIMEOUT,
             help="per-file semgrep analysis timeout in seconds (default: %(default)s)",
+        )
+        sub.add_argument(
+            "--process-timeout",
+            type=positive_float,
+            default=runner.DEFAULT_PROCESS_TIMEOUT,
+            help="wall-clock bound on the whole semgrep subprocess in seconds "
+            "(default: %(default)s)",
         )
 
     scan = sub.add_parser("scan", help="scan a local repository path")

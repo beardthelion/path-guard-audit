@@ -239,6 +239,7 @@ def scan_file(
     path: Path,
     *,
     timeout: float = runner.DEFAULT_TIMEOUT,
+    process_timeout: float = runner.DEFAULT_PROCESS_TIMEOUT,
     rules_dir: str | Path | None = None,
 ) -> FileScan:
     """Scan one corpus file and reduce the classified result to sets.
@@ -248,7 +249,12 @@ def scan_file(
     Corpus content is data to the engine only; it is never imported or
     executed.
     """
-    run = runner.run_scan(path, timeout=timeout, rules_dir=rules_dir)
+    run = runner.run_scan(
+        path,
+        timeout=timeout,
+        process_timeout=process_timeout,
+        rules_dir=rules_dir,
+    )
     result = classify.classify_results(
         run.data,
         target_ignore_files=run.target_ignore_files,
@@ -382,6 +388,7 @@ def validate_corpus(
     corpus_dir: str | Path,
     *,
     timeout: float = runner.DEFAULT_TIMEOUT,
+    process_timeout: float = runner.DEFAULT_PROCESS_TIMEOUT,
     rules_dir: str | Path | None = None,
     ruleset_version: str = __version__,
     scan_fn=None,
@@ -396,7 +403,12 @@ def validate_corpus(
     rows = load_manifest(corpus_dir)
     if scan_fn is None:
         def scan_one(path: Path) -> FileScan:
-            return scan_file(path, timeout=timeout, rules_dir=rules_dir)
+            return scan_file(
+                path,
+                timeout=timeout,
+                process_timeout=process_timeout,
+                rules_dir=rules_dir,
+            )
     else:
         scan_one = scan_fn
 

@@ -1105,3 +1105,117 @@ def test_canonical_boundary_receiver_carried_sink(tmp_path):
     )
     [site] = result["sites"]
     assert site["resolution"] == "recognized_complete"
+
+
+def test_dependency_guarded_stdlib_zipfile(tmp_path):
+    (tmp_path / "dl.py").write_text(
+        "import zipfile\n"
+        "def dl(dest):\n"
+        "    with zipfile.ZipFile('/tmp/dl.zip') as zip_ref:\n"
+        "        zip_ref.extractall(dest)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "dl.py",
+                    4,
+                    "        zip_ref.extractall(dest)",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    [note] = site["dependency_guards"]
+    assert note["package"] == "zipfile"
+    assert note["version_status"] == "confirmed"
+
+
+def test_zipfile_zf_receiver_demotes(tmp_path):
+    (tmp_path / "dl.py").write_text(
+        "import zipfile\n"
+        "def dl(dest):\n"
+        "    with zipfile.ZipFile('/tmp/dl.zip') as zf:\n"
+        "        zf.extractall(dest)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "dl.py",
+                    4,
+                    "        zf.extractall(dest)",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    [note] = site["dependency_guards"]
+    assert note["package"] == "zipfile"
+
+
+def test_tarfile_extractall_stays_p4(tmp_path):
+    # tarfile.extractall does NOT sanitize member names in older
+    # Pythons: it must keep the deterministic P4.
+    (tmp_path / "dl.py").write_text(
+        "import tarfile\n"
+        "def dl(dest):\n"
+        "    with tarfile.open('/tmp/dl.tgz') as tar_ref:\n"
+        "        tar_ref.extractall(dest)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "dl.py",
+                    4,
+                    "        tar_ref.extractall(dest)",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]
+
+
+def test_unpack_archive_stays_p4(tmp_path):
+    # shutil.unpack_archive dispatches to tarfile for tar archives:
+    # cannot prove the format statically, keep the P4.
+    (tmp_path / "dl.py").write_text(
+        "import shutil\n"
+        "def dl(dest):\n"
+        "    shutil.unpack_archive('/tmp/dl.arc', dest)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                mk_result_with_lines(
+                    "rules.python.p4",
+                    "dl.py",
+                    3,
+                    "    shutil.unpack_archive('/tmp/dl.arc', dest)",
+                    {"guard_class": "P4"},
+                ),
+            ],
+            scanned=["dl.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P4"]

@@ -310,6 +310,15 @@ methods with a documented minimum safe version:
   minimum is declared, so those pins keep the P4. The call receiver
   must contain `tar` (`tar.x`, `tarFile.extract`, ...) so an unrelated
   `x`/`extract` call in a tar-importing file is not demoted.
+- stdlib `zipfile`: `extractall`/`extract` on a conventional zipfile
+  handle (`zf`, `zip_ref`, `zipfile`, ...) in a `.py` file that
+  references the module is always safe: `ZipFile._extract_member`
+  strips drive letters, absolute prefixes, and `.`/`..` components on
+  every supported Python, so member-name traversal is dead by design.
+  No version evidence is needed; the note records `confirmed`.
+  `tarfile.extractall` is NOT safe (unfiltered member names on older
+  Pythons) and `shutil.unpack_archive` dispatches to tarfile for tar
+  archives, so both keep their deterministic P4.
 
 When a P4 finding's matched call is one of these methods *and* the file
 references the package (import/require name or the conventional call

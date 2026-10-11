@@ -1,0 +1,43 @@
+{
+  "instance_id": "dbgpt-flow-import-zip-filename",
+  "repo": "eosphoros-ai/DB-GPT",
+  "repo_url": "https://github.com/eosphoros-ai/DB-GPT",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "ad203de5c7301c9a103caa1198d17aaee18c6647",
+      "files": [
+        {
+          "upstream_path": "packages/dbgpt-serve/src/dbgpt_serve/flow/service/share_utils.py",
+          "corpus_path": "corpus/dbgpt-flow-import-zip-filename/vulnerable/packages/dbgpt-serve/src/dbgpt_serve/flow/service/share_utils.py",
+          "labeled_lines": [
+            103,
+            113
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P2",
+      "P4"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2025-6772"
+    ],
+    "ghsa": [],
+    "links": [
+      "https://github.com/eosphoros-ai/DB-GPT/issues/2774"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "_parse_flow_from_zip_file joins temp_dir with the raw multipart file.filename (os.path.join, only a .zip suffix check): ../../x.zip writes outside the temp dir. Reachable unauthenticated at POST /api/v1|v2/serve/awel/flow/import (api_keys defaults to allow-all, /api/v1 short-circuits auth). Matches CVE-2025-6772 / issue 2774; the site remains unpatched upstream at the pinned sha. The extractall calls it eventually reaches are zipfile-sanitized; the flagged classes are filename-shaping (P2) and member-write (P4) sites.",
+  "last_verified": "2026-10-11"
+}

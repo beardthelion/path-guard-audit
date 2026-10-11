@@ -163,9 +163,11 @@ one that is provably free of path handling.
   `unzipper` shapes. Bulk extractors whose member-name checks live
   inside the dependency are handled conservatively: `adm-zip`
   `extractAllTo`-family (>= 0.6.1), `extract-zip`'s
-  `extractZip`/`extractZipAsync` (>= 2.0.1), and node-tar
+  `extractZip`/`extractZipAsync` (>= 2.0.1), node-tar
   `tar.x`/`tar.extract`/`tar.extractSync` on a tar-ish receiver
-  (>= 6.1.2) demote to a `dependency-guarded` note
+  (>= 6.1.2), and stdlib `zipfile` `extractall`/`extract` on a
+  conventional zip handle in a `.py` file (safe by `_extract_member`
+  design, no version evidence needed) demote to a `dependency-guarded` note
   (the site resolves `unrecognized_guard`, never silent). `package-lock.json` /
   `package.json` at the target root are consulted offline as version
   evidence: an exact pin >= the minimum is recorded as `confirmed`, a pin

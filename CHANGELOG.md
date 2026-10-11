@@ -27,9 +27,14 @@ real-world smoke hits:
   package, because adm-zip >= 0.6.1 sanitizes member names and rejects
   writes through in-root symlinks. The same mechanism covers
   `extract-zip`'s `extractZip`/`extractZipAsync` (>= 2.0.1, out-of-root
-  realpath check per entry) and node-tar `tar.x`/`tar.extract`/
+  realpath check per entry), node-tar `tar.x`/`tar.extract`/
   `tar.extractSync` on a tar-ish receiver (>= 6.1.2, default member-name
-  confinement plus the 2021 path-safety fixes).
+  confinement plus the 2021 path-safety fixes), and stdlib `zipfile`
+  `extractall`/`extract` on a conventional zip handle in a `.py` file
+  (`_extract_member` strips `..`/absolute components by design, so no
+  version evidence is required). `tarfile.extractall` and
+  `shutil.unpack_archive` are deliberately not covered: tar member names
+  are unfiltered.
   `package-lock.json`/`package.json`
   exact pins are consulted as offline version evidence: >= the minimum
   records `confirmed`, below the minimum keeps the deterministic P4,
@@ -37,6 +42,14 @@ real-world smoke hits:
   "dependency-guarded, verify version". Fixes the coc-rust-analyzer
   `downloadServer` P4 false positive; the corpus row keeps its
   vulnerable call-site shape pin with an `accepted_misses` note.
+
+- `--process-timeout` flag on `scan` and `corpus-validate`: raises the
+  wall-clock bound on the semgrep subprocess (default 1800s), needed
+  for scans of large monorepos.
+- Corpus: `dbgpt-flow-import-zip-filename` (CVE-2025-6772 shape,
+  raw `os.path.join(temp_dir, file.filename)` upload write) and
+  `metagpt-editor-paths` (CVE-2026-19059 shape, `@register_tool` file
+  editor with no path confinement) vendored as deterministic anchors.
 
 ## 0.1.0 (2026-10-10)
 

@@ -117,6 +117,22 @@ _DEP_GUARDED_EXTRACTORS = {
             r"from\s+['\"]tar['\"]|require\(\s*['\"]tar['\"]"
         ),
     },
+    # stdlib zipfile._extract_member strips drive letters, absolute
+    # prefixes, "." and ".." components from every member name, so
+    # extractall/extract cannot traverse by member name on any
+    # supported Python (tarfile.extractall is NOT safe and is not
+    # listed). The receiver must be a conventional zipfile handle name
+    # (zf, zip_ref, zipfile, ...) and the file must reference the
+    # module. No version evidence is required: the sanitize is stdlib
+    # behavior. shutil.unpack_archive stays deterministic because it
+    # dispatches to tarfile for tar archives.
+    "zipfile": {
+        "stdlib": True,
+        "exts": (".py",),
+        "call": re.compile(r"\b(\w[\w$]*)\.(?:extractall|extract)\s*\("),
+        "receiver": re.compile(r"(?i)(?:^zf$|zip)"),
+        "needle": re.compile(r"zipfile"),
+    },
 }
 # Exact-pins only count as version evidence; a range (^, ~, >=) does not
 # prove what got installed.
@@ -289,6 +305,8 @@ def _dependency_guard_note(
     haystack = "\n".join(file_lines) if file_lines else text
     package = None
     minimum = None
+    stdlib = False
+    result_path = str(result.get("path", ""))
     for pkg, spec in _DEP_GUARDED_EXTRACTORS.items():
         m = spec["call"].search(text)
         if not m:
@@ -296,13 +314,30 @@ def _dependency_guard_note(
         receiver = spec.get("receiver")
         if receiver is not None and not receiver.search(m.group(1)):
             continue
+        exts = spec.get("exts")
+        if exts and not result_path.endswith(exts):
+            continue
         if not spec["needle"].search(haystack):
             continue
-        package, minimum = pkg, spec["min"]
+        package, minimum, stdlib = (
+            pkg, spec.get("min"), bool(spec.get("stdlib"))
+        )
         break
     if package is None:
         return None
     loc = _loc(result)
+    if stdlib:
+        return {
+            **loc,
+            "package": package,
+            "min_version": None,
+            "version": None,
+            "version_status": "confirmed",
+            "reason": (
+                f"dependency-guarded: stdlib {package} sanitizes "
+                "member names at extraction"
+            ),
+        }
     version = _manifest_dep_version(target_root, package)
     if version is not None:
         vt = _version_tuple(version)

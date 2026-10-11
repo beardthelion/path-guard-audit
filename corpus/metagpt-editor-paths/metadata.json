@@ -1,0 +1,48 @@
+{
+  "instance_id": "metagpt-editor-paths",
+  "repo": "FoundationAgents/MetaGPT",
+  "repo_url": "https://github.com/FoundationAgents/MetaGPT",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "11cdf466d042aece04fc6cfd13b28e1a70341b1f",
+      "files": [
+        {
+          "upstream_path": "metagpt/tools/libs/editor.py",
+          "corpus_path": "corpus/metagpt-editor-paths/vulnerable/metagpt/tools/libs/editor.py",
+          "labeled_lines": [
+            116,
+            139,
+            509,
+            593
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+      "P4"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-19059"
+    ],
+    "ghsa": [
+      "GHSA-x7c6-rrf2-hrj9"
+    ],
+    "links": []
+  },
+  "fetched_paths": [],
+  "notes": "@register_tool file editor: model-chosen file_name flows to open/write with only exists()/mkdir checks; _try_fix_path passes absolute paths verbatim and joins relatives under working_dir without canonicalization. Matches CVE-2026-19059 (read side disclosed, <= 0.8.2, vendor unresponsive); the write sites are the same root cause. Still unguarded at the pinned sha.",
+  "last_verified": "2026-10-11"
+}
