@@ -58,10 +58,11 @@ NO_GUARD_CLASS = "P0"
 # Classes a bound canonical-boundary guard can clear: the join/member
 # classes (P2 prefix-without-canonicalization, P3 join-without-boundary,
 # P4 member traversal) all name the gap a canonicalize + boundary check
-# fills. Other classes name different bugs (P1 strip-only shaping, P7
-# decoded inputs, P8 env allowlists) that the same check does not cure,
-# so a site carrying them stays deterministic.
-_CANON_BOUNDARY_CLASSES = frozenset({"P2", "P3", "P4"})
+# fills. P1 (strip-only shaping) and P7 (decoded inputs) are traversal
+# enablers the same downstream check rejects, so they clear alongside
+# the join/member classes. P0 (unguarded open), P6, and P8 name bugs the
+# check does not cure and stay deterministic.
+_CANON_BOUNDARY_CLASSES = frozenset({"P1", "P2", "P3", "P4", "P7"})
 
 # Bulk-extract calls whose member-name safety lives inside the
 # dependency and cannot be verified intra-function. When a P4 finding's
@@ -209,6 +210,86 @@ _CANON_ALIAS_RE = re.compile(
     r"(?:[\w$.]+\(\s*(\w[\w$]*)\s*\)|(\w[\w$]*))\s*(?:#.*)?$"
 )
 
+# Segment neutralization: a value reduced to a bare path segment
+# cannot traverse by name. Assignment shapes that neutralize:
+#   filename = os.path.basename(x)      # also path.basename, basename
+#   filename = Path(x).name             # pathlib segment extraction
+# Inline shapes matched inside a sink's first argument:
+#   os.path.join(root, basename(x))
+#   Path(x).name passed directly
+# ``x.split("/")[-1]`` is deliberately NOT listed: it is the P1
+# strip-shaping class and leaves ".." literals as well as backslash
+# traversal. Residual: basename(".")/basename("..") still yield the
+# dot literals, which land on directories and fail for file sinks;
+# demotion is therefore to a manual-review note, never silent.
+_BASENAME_ASSIGN_RE = re.compile(
+    r"^\s*(\w[\w$]*)\s*=\s*.*\bbasename\s*\("
+)
+_PATHNAME_ASSIGN_RE = re.compile(
+    r"^\s*(\w[\w$]*)\s*=\s*\w[\w$.]*\([^)]*\)\s*\.name\b"
+)
+_BASENAME_INLINE_RE = re.compile(
+    r"\bbasename\s*\(|\w[\w$.]*\([^)]*\)\s*\.name\b"
+)
+_NEUTRALIZER_CLASSES = frozenset(
+    {"P0", "P1", "P2", "P3", "P4", "P7"}
+)
+
+
+def _neutralized_vars(lines: list[str]) -> set[str]:
+    """Variables assigned a bare path segment by basename/Path().name."""
+    out: set[str] = set()
+    for line in lines:
+        m = _BASENAME_ASSIGN_RE.match(line) or _PATHNAME_ASSIGN_RE.match(
+            line
+        )
+        if m:
+            out.add(m.group(1))
+    return out
+
+
+def _first_arg_region(text: str) -> str:
+    """The first top-level argument region of a call expression."""
+    i = text.find("(")
+    if i == -1:
+        return text
+    depth = 0
+    end = len(text)
+    for j in range(i, len(text)):
+        c = text[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                end = j
+                break
+        elif c == "," and depth == 1:
+            end = j
+            break
+    return text[i + 1 : end]
+
+
+def _neutralized_sink(
+    result: dict,
+    lines: list[str],
+    target_root: Path | None,
+    lines_cache: dict | None,
+) -> bool:
+    """True when the finding's path argument is provably a bare segment.
+
+    Inline basename/Path().name in the first argument, or any first-arg
+    identifier assigned from a segment extraction within a small window
+    above the finding.
+    """
+    text = _hit_text(result, target_root, lines_cache)
+    region = _first_arg_region(text)
+    if _BASENAME_INLINE_RE.search(region):
+        return True
+    loc = _loc(result)
+    window = lines[max(0, loc["line"] - 45) : loc["line"]]
+    return bool(_text_idents(region) & _neutralized_vars(window))
+
 
 def _canon_bound_vars(lines: list[str], checked: set[str]) -> set[str]:
     """Checked vars plus anything assigned directly from them.
@@ -252,16 +333,47 @@ def _canon_checked_vars(text: str) -> set[str]:
 
     The probe matched an ``if`` statement; the checked variable is the
     subject of the separator-joined prefix or is_relative_to call inside
-    its condition.
+    its condition. A `d.startswith('..')` subject is a relpath-diff
+    variable: it is added so `_relpath_targets` can bind the path whose
+    diff was checked, since the diff itself never reaches a sink.
     """
     out: set[str] = set()
     for m in _CHECKED_VAR_RE.finditer(text):
         method = m.group(2)
         if method in ("startswith", "startsWith"):
-            arg = _balanced_arg(text, m.end() - 1)
-            if not ("sep" in arg or '"/"' in arg or "'/'" in arg):
-                continue
+            arg = _balanced_arg(text, m.end() - 1).strip()
+            if arg in ("'..'", '".."', "'../'", '"../"'):
+                out.add(m.group(1))
+            elif "sep" in arg or '"/"' in arg or "'/'" in arg:
+                out.add(m.group(1))
+            continue
         out.add(m.group(1))
+    return out
+
+
+# ``d = os.path.relpath(v, root)`` (Python: path is arg 1) and
+# ``d = path.relative(root, v)`` (Node: path is arg 2) assignments.
+_RELPATH_ASSIGN_RE = re.compile(
+    r"^\s*(?:const\s+|let\s+|var\s+)?(\w[\w$]*)\s*=\s*"
+    r"[\w$.]*relpath\s*\(\s*(\w[\w$]*)"
+)
+_RELATIVE_ASSIGN_RE = re.compile(
+    r"^\s*(?:const\s+|let\s+|var\s+)?(\w[\w$]*)\s*=\s*"
+    r"[\w$.]*relative\s*\([^,]+,\s*(\w[\w$]*)"
+)
+
+
+def _relpath_targets(lines: list[str], diff_vars: set[str]) -> set[str]:
+    """Path variables whose relpath/relative diff was boundary-checked."""
+    out: set[str] = set()
+    for line in lines:
+        m = _RELPATH_ASSIGN_RE.match(line)
+        if m and m.group(1) in diff_vars:
+            out.add(m.group(2))
+            continue
+        m = _RELATIVE_ASSIGN_RE.match(line)
+        if m and m.group(1) in diff_vars:
+            out.add(m.group(2))
     return out
 
 
@@ -588,6 +700,8 @@ class _Site:
     sink_arg_idents: set[str] = field(default_factory=set)
     # guard_class -> list of finding locations at this site
     class_locations: dict[str, list[dict]] = field(default_factory=dict)
+    # guard_class -> raw finding results, for per-finding demotion
+    class_results: dict[str, list[dict]] = field(default_factory=dict)
     has_raw_no_guard: bool = False
     no_guard_locations: list[dict] = field(default_factory=list)
     complete_guard_results: list[dict] = field(default_factory=list)
@@ -597,6 +711,10 @@ class _Site:
     # self-sanitizing dependency API; each entry is the note dict from
     # _dependency_guard_note.
     dep_guards: list[dict] = field(default_factory=list)
+    # Findings demoted because their path argument is a basename'd bare
+    # segment: confined to the join root (or cwd) except for the
+    # '.'/'..' literal edge. Each entry is {**loc, kind, reason}.
+    neutralizer_notes: list[dict] = field(default_factory=list)
     resolution: str = ""
     test_path: bool = False
 
@@ -632,6 +750,7 @@ class _Site:
             "sinks": self.sinks,
             "guard_locations": guards,
             "dependency_guards": self.dep_guards,
+            "neutralizer_notes": self.neutralizer_notes,
             "test_path": self.test_path,
         }
 
@@ -787,6 +906,7 @@ def classify_results(
             site.class_locations.setdefault(cls, [])
             if loc not in site.class_locations[cls]:
                 site.class_locations[cls].append(loc)
+            site.class_results.setdefault(cls, []).append(f)
 
     for note, f in dep_findings:
         loc = _loc(f)
@@ -821,6 +941,7 @@ def classify_results(
             and not site.class_locations
             and not site.has_raw_no_guard
             and not site.dep_guards
+            and not site.neutralizer_notes
         ):
             # Handler with no enumerated sink: a surface marker only.
             site.resolution = RESOLUTION_HANDLER_NO_SINK
@@ -866,12 +987,43 @@ def classify_results(
                 checked = _canon_checked_vars(
                     _hit_text(r, root, lines_cache)
                 )
-                if (
-                    checked
-                    and _canon_bound_vars(extent_lines, checked) & carriers
-                ):
+                bound_vars = _canon_bound_vars(extent_lines, checked)
+                bound_vars |= _relpath_targets(extent_lines, checked)
+                if checked and bound_vars & carriers:
                     return True
             return False
+
+        # Basename neutralizer demotion: a finding whose path argument
+        # is a bare segment (basename'd or Path().name) cannot traverse
+        # by name; demote it to a manual-review note per finding.
+        if site.class_locations:
+            site_lines = (
+                _file_lines(site.path, root, lines_cache) or []
+            )
+            for cls in list(site.class_locations):
+                if cls not in _NEUTRALIZER_CLASSES:
+                    continue
+                for f in site.class_results.get(cls, []):
+                    if not _neutralized_sink(
+                        f, site_lines, root, lines_cache
+                    ):
+                        continue
+                    loc = _loc(f)
+                    if loc in site.class_locations.get(cls, []):
+                        site.class_locations[cls].remove(loc)
+                    site.neutralizer_notes.append(
+                        {
+                            **loc,
+                            "kind": "basename-segment",
+                            "reason": (
+                                "basename-confined: path argument is a "
+                                "bare segment; only '.'/'..' literals "
+                                "can still escape the join root"
+                            ),
+                        }
+                    )
+                if not site.class_locations.get(cls):
+                    site.class_locations.pop(cls, None)
 
         if site.class_locations:
             if set(site.class_locations) <= _CANON_BOUNDARY_CLASSES and (
@@ -898,10 +1050,10 @@ def classify_results(
             # cleaned the tainted value itself; the guard vocabulary was
             # seen at this site.
             site.resolution = RESOLUTION_RECOGNIZED_COMPLETE
-        elif site.dep_guards:
+        elif site.dep_guards or site.neutralizer_notes:
             # Every deterministic class was demoted to a dependency-guard
-            # note: "dependency-guarded, verify version" goes to manual
-            # review, never silent.
+            # or segment-neutralizer note: those go to manual review,
+            # never silent.
             site.resolution = RESOLUTION_UNRECOGNIZED
         else:
             site.resolution = RESOLUTION_NO_FLOW

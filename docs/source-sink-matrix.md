@@ -271,7 +271,17 @@ sink as a method receiver (`checked.write_text(...)`,
 `checked.parent.mkdir(...)`), or to be assigned verbatim into the sink
 variable inside the same function (`sink_var = checked` or a
 single-argument `Path(checked)` wrapper; an expression appending path
-components never binds). The stricter
+components never binds).
+
+A second canonical-boundary idiom is the relpath-diff check: a variable
+assigned from `os.path.relpath(path, root)` / `path.relative(root,
+path)` and a reject-arm `if` checking the diff for `'..'` /
+`"../"` literals (`d.startswith('..')`). The relpath result is either
+`..`, an in-root relative path, or absolute, so the bare `..` prefix
+check is complete. Binding is to the relpath's *path* argument (the
+diff variable never reaches a sink): `os.path.relpath` arg 1,
+`path.relative` arg 2, with `const`/`let`/`var` declarations allowed.
+The stricter
 binding exists because the probe already proves the check is a real
 boundary check; the only laundering left is checking the wrong path.
 
@@ -322,6 +332,21 @@ methods with a documented minimum safe version:
   `tarfile.extractall` is NOT safe (unfiltered member names on older
   Pythons) and `shutil.unpack_archive` dispatches to tarfile for tar
   archives, so both keep their deterministic P4.
+
+## Segment neutralizers
+
+`basename`/`Path().name` reduce a value to a single path segment, which
+cannot traverse by name. A finding whose path argument is neutralized
+(either inline in the sink's first argument, `join(root, basename(x))`,
+or an identifier assigned `v = basename(x)` / `v = Path(x).name` within
+45 lines above the finding) demotes to a `basename-segment`
+neutralizer note and the site resolves `unrecognized_guard` if every
+deterministic class demotes. Demotion covers P0, P1, P2, P3, P4, and
+P7. It is not `recognized_complete`: `basename('..')` and
+`basename('.')` still yield the dot literals, which land on directories
+and fail for file sinks, a narrow residual kept visible as a note.
+`entry.name`-style attribute reads (no parentheses) are NOT
+neutralizers: on archive members they return the full member path.
 
 When a P4 finding's matched call is one of these methods *and* the file
 references the package (import/require name or the conventional call

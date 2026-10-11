@@ -455,3 +455,64 @@ rules:
             - pattern: <... $V.startswith($R + "/") ...>
             - pattern: <... $V.startswith($R + '/') ...>
             - pattern: <... $V.is_relative_to($R) ...>
+
+  - id: path-guard-audit-probe-relpath-boundary-python
+    message: >-
+      Site probe: in-function relpath-diff boundary guard. The function
+      assigns a variable from os.path.relpath and, inside an `if` that
+      rejects (raise / return / continue), checks that diff for '..'
+      literals: `d.startswith('..')`. A relpath result is either '..',
+      '../<nested>', or an in-root relative path, so the bare '..'
+      prefix check is a complete boundary. classify.py then binds the
+      relpath's path argument (not the diff variable) to a sink's first
+      argument before resolving the site recognized-complete.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: canonical_boundary_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $D = os.path.relpath(...)
+                ...
+          - pattern-inside: |
+              def $F(...):
+                ...
+                $D = relpath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $D = os.path.relpath(...)
+                ...
+          - pattern-inside: |
+              async def $F(...):
+                ...
+                $D = relpath(...)
+                ...
+      - pattern-either:
+          - pattern: |
+              if $C:
+                ...
+                raise ...
+                ...
+          - pattern: |
+              if $C:
+                ...
+                return ...
+                ...
+          - pattern: |
+              if $C:
+                ...
+                continue
+                ...
+      - metavariable-pattern:
+          metavariable: $C
+          pattern-either:
+            - pattern: <... $D.startswith('..') ...>
+            - pattern: <... $D.startswith("..") ...>

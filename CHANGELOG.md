@@ -48,6 +48,18 @@ real-world smoke hits:
 - `--process-timeout` flag on `scan` and `corpus-validate`: raises the
   wall-clock bound on the semgrep subprocess (default 1800s), needed
   for scans of large monorepos.
+- Relpath-diff canonical boundary: `d = os.path.relpath(v, root)` /
+  `d = path.relative(root, v)` followed by a reject-arm
+  `d.startswith('..')` check resolves recognized_complete, with binding
+  to the relpath's path argument (relpath arg 1, relative arg 2).
+  The canonical-clear set widens from {P2,P3,P4} to {P1,P2,P3,P4,P7}:
+  strip-shaping and decoded-input findings are traversal enablers the
+  same downstream check rejects. P0/P6/P8 stay deterministic.
+- Basename segment neutralizer: findings whose path argument is
+  basename'd (inline `basename(x)` in the sink arg, or
+  `v = basename(x)` / `v = Path(x).name` upstream) demote to a
+  `basename-segment` note covering P0/P1/P2/P3/P4/P7. Attribute reads
+  like `entry.name` do not count (member paths, not basenames).
 - Corpus: `dbgpt-flow-import-zip-filename` (CVE-2025-6772 shape,
   raw `os.path.join(temp_dir, file.filename)` upload write) and
   `metagpt-editor-paths` (CVE-2026-19059 shape, `@register_tool` file

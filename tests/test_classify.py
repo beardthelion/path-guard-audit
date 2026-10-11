@@ -732,8 +732,8 @@ def test_canonical_boundary_no_separator_stays_deterministic():
 
 
 def test_canonical_boundary_does_not_clear_unrelated_class():
-    # A bound canonical guard clears P2/P3/P4 only; a P1 strip-only
-    # shape at the same site keeps it deterministic.
+    # A bound canonical guard clears P1/P2/P3/P4/P7 only; a P8
+    # env-allowlist finding at the same site keeps it deterministic.
     result = classify_results(
         scan(
             [
@@ -746,18 +746,18 @@ def test_canonical_boundary_does_not_clear_unrelated_class():
                     {"probe_role": "path_sink"},
                 ),
                 mk_result_with_lines(
-                    "rules.python.p4",
+                    "rules.python.p8",
+                    "srv.py",
+                    19,
+                    '        path = os.environ["ROOT"]',
+                    {"guard_class": "P8"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p3",
                     "srv.py",
                     18,
                     '        open(target, "wb")',
-                    {"guard_class": "P4"},
-                ),
-                mk_result_with_lines(
-                    "rules.python.p1",
-                    "srv.py",
-                    12,
-                    '        member = member.replace("..", "")',
-                    {"guard_class": "P1"},
+                    {"guard_class": "P3"},
                 ),
                 canon_probe(
                     "srv.py",
@@ -773,7 +773,7 @@ def test_canonical_boundary_does_not_clear_unrelated_class():
     )
     [site] = result["sites"]
     assert site["resolution"] == "deterministic"
-    assert site["classes"] == ["P1", "P4"]
+    assert site["classes"] == ["P3", "P8"]
 
 
 def _dep_fixture(tmp_path, lock_version=None, imports_adm=True):
@@ -1310,3 +1310,276 @@ def test_canonical_boundary_appended_component_stays(tmp_path):
     [site] = result["sites"]
     assert site["resolution"] == "deterministic"
     assert site["classes"] == ["P3"]
+
+
+def test_basename_inline_demotes_to_note(tmp_path):
+    (tmp_path / "u.py").write_text(
+        "def up(d, file):\n"
+        "    return open(os.path.join(d, os.path.basename(file.filename)), 'wb')\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("u.py", 1, 2),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "u.py",
+                    2,
+                    "    return open(os.path.join(d, os.path.basename(file.filename)), 'wb')",
+                    {"guard_class": "P3"},
+                ),
+            ],
+            scanned=["u.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    assert site["classes"] == []
+    [note] = site["neutralizer_notes"]
+    assert note["kind"] == "basename-segment"
+
+
+def test_basename_assignment_demotes(tmp_path):
+    (tmp_path / "u.py").write_text(
+        "def up(d, file):\n"
+        "    filename = os.path.basename(file.filename)\n"
+        "    return open(os.path.join(d, filename), 'wb')\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("u.py", 1, 3),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "u.py",
+                    3,
+                    "    return open(os.path.join(d, filename), 'wb')",
+                    {"guard_class": "P3"},
+                ),
+            ],
+            scanned=["u.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+    assert site["classes"] == []
+
+
+def test_pathname_assignment_demotes(tmp_path):
+    (tmp_path / "u.py").write_text(
+        "def up(d, file):\n"
+        "    filename = Path(file.filename).name\n"
+        "    return open(os.path.join(d, filename), 'wb')\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("u.py", 1, 3),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "u.py",
+                    3,
+                    "    return open(os.path.join(d, filename), 'wb')",
+                    {"guard_class": "P3"},
+                ),
+            ],
+            scanned=["u.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+
+
+def test_member_name_attr_stays_deterministic(tmp_path):
+    # entry.name on a zip member is the full member path, not a
+    # basename: it must keep the deterministic finding.
+    (tmp_path / "u.py").write_text(
+        "def up(d, entry):\n"
+        "    filename = entry.name\n"
+        "    return open(os.path.join(d, filename), 'wb')\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("u.py", 1, 3),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "u.py",
+                    3,
+                    "    return open(os.path.join(d, filename), 'wb')",
+                    {"guard_class": "P3"},
+                ),
+            ],
+            scanned=["u.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P3"]
+
+
+def test_unneutralized_join_stays_deterministic(tmp_path):
+    (tmp_path / "u.py").write_text(
+        "def up(d, file):\n"
+        "    return open(os.path.join(d, file.filename), 'wb')\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("u.py", 1, 2),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "u.py",
+                    2,
+                    "    return open(os.path.join(d, file.filename), 'wb')",
+                    {"guard_class": "P3"},
+                ),
+            ],
+            scanned=["u.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P3"]
+
+
+def test_relpath_diff_binds_target(tmp_path):
+    # LibreChat getLocalFileStream shape: the diff var is checked,
+    # the sink uses the path it was relative'd from.
+    (tmp_path / "files.py").write_text(
+        "def serve(user, name):\n"
+        "    full = os.path.join(dir_root, name)\n"
+        "    diff = os.path.relpath(full, dir_root)\n"
+        "    if diff.startswith('..'):\n"
+        "        raise HTTPException(403)\n"
+        "    return open(full)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("files.py", 1, 6),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "files.py",
+                    6,
+                    "    return open(full)",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "files.py",
+                    2,
+                    "    full = os.path.join(dir_root, name)",
+                    {"guard_class": "P3"},
+                ),
+                canon_probe(
+                    "files.py",
+                    4,
+                    5,
+                    "    if diff.startswith('..'):\n"
+                    "        raise HTTPException(403)",
+                ),
+            ],
+            scanned=["files.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "recognized_complete"
+
+
+def test_relpath_diff_wrong_target_stays(tmp_path):
+    # Check on one file's diff, sink on another path: does not bind.
+    (tmp_path / "files.py").write_text(
+        "def serve(user, name, other):\n"
+        "    full = os.path.join(dir_root, name)\n"
+        "    diff = os.path.relpath(full, dir_root)\n"
+        "    if diff.startswith('..'):\n"
+        "        raise HTTPException(403)\n"
+        "    return open(other)\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("files.py", 1, 6),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "files.py",
+                    6,
+                    "    return open(other)",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.p3",
+                    "files.py",
+                    2,
+                    "    full = os.path.join(dir_root, name)",
+                    {"guard_class": "P3"},
+                ),
+                canon_probe(
+                    "files.py",
+                    4,
+                    5,
+                    "    if diff.startswith('..'):\n"
+                    "        raise HTTPException(403)",
+                ),
+            ],
+            scanned=["files.py"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["P3"]
+
+
+def test_relpath_ts_relative_binds_second_arg(tmp_path):
+    # path.relative(root, full): the checked path is arg 2.
+    (tmp_path / "files.js").write_text(
+        "function serve(name) {\n"
+        "    const full = path.join(dirRoot, name);\n"
+        "    const diff = path.relative(dirRoot, full);\n"
+        "    if (diff.startsWith('..')) {\n"
+        "        throw new Error('outside');\n"
+        "    }\n"
+        "    fs.createReadStream(full).pipe(res);\n"
+        "}\n"
+    )
+    result = classify_results(
+        scan(
+            [
+                handler("files.js", 1, 8),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "files.js",
+                    7,
+                    "    fs.createReadStream(full).pipe(res);",
+                    {"probe_role": "path_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.typescript.p3",
+                    "files.js",
+                    2,
+                    "    const full = path.join(dirRoot, name);",
+                    {"guard_class": "P3"},
+                ),
+                canon_probe(
+                    "files.js",
+                    4,
+                    6,
+                    "    if (diff.startsWith('..')) {\n"
+                    "        throw new Error('outside');\n"
+                    "    }",
+                ),
+            ],
+            scanned=["files.js"],
+        ),
+        target_root=tmp_path,
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "recognized_complete"

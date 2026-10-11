@@ -101,3 +101,37 @@ export function canonicalBoundaryNoReject(dest: string, members: string[]) {
     }
   }
 }
+
+
+// ruleid: path-guard-audit-probe-handler-source-typescript
+export function relativeDiffGuard(root: string, member: string) {
+  const diff = path.relative(root, member);
+  // ruleid: path-guard-audit-probe-relpath-boundary-typescript,path-guard-audit-probe-intervening-validation-typescript
+  if (diff.startsWith("..")) {
+    throw new Error("outside root");
+  }
+  // ruleid: path-guard-audit-probe-path-sink-typescript
+  fs.writeFileSync(member, "");
+}
+
+// ruleid: path-guard-audit-probe-handler-source-typescript
+export function relativeDiffNoReject(root: string, member: string) {
+  const diff = path.relative(root, member);
+  const inside = !diff.startsWith("..");
+  if (inside) {
+    // ruleid: path-guard-audit-probe-path-sink-typescript
+    fs.writeFileSync(member, "");
+  }
+}
+
+// ruleid: path-guard-audit-probe-handler-source-typescript
+export function relativeDiffOtherVar(root: string, member: string) {
+  const diff = path.relative(root, member);
+  const other = path.relative(root, "/x");
+  // ruleid: path-guard-audit-probe-relpath-boundary-typescript,path-guard-audit-probe-intervening-validation-typescript
+  if (other.startsWith("..")) {
+    throw new Error("outside root");
+  }
+  // ruleid: path-guard-audit-probe-path-sink-typescript
+  fs.writeFileSync(member, "");
+}

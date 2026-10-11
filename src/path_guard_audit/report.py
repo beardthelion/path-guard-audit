@@ -134,6 +134,11 @@ def render_text(
                         f"      dep-guard: {dg['path']}:{dg['line']} "
                         f"({dg['reason']})"
                     )
+                for nn in s.get("neutralizer_notes", []):
+                    out.append(
+                        f"      neutralizer: {nn['path']}:{nn['line']} "
+                        f"({nn['reason']})"
+                    )
                 if s["test_path"]:
                     out.append("      (under a test/example path)")
     out.append("")
@@ -154,6 +159,11 @@ def render_text(
                 out.append(
                     f"    dependency guard: {dg['path']}:{dg['line']} "
                     f"({dg['reason']})"
+                )
+            for nn in s.get("neutralizer_notes", []):
+                out.append(
+                    f"    neutralizer:      {nn['path']}:{nn['line']} "
+                    f"({nn['reason']})"
                 )
             for loc in s["sinks"]:
                 out.append(f"    sink:            {_fmt_loc(loc)}")

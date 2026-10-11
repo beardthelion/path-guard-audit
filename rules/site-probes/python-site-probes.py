@@ -124,3 +124,35 @@ def canonical_boundary_other_var(dest, member):
             continue
         # ruleid: path-guard-audit-probe-path-sink-python
         open(os.path.join(dest, m), "wb").write(m.encode())
+
+
+# ruleid: path-guard-audit-probe-handler-source-python
+def relpath_diff_guard(root, member):
+    diff = os.path.relpath(member, root)
+    # ruleid: path-guard-audit-probe-relpath-boundary-python,path-guard-audit-probe-intervening-validation-python
+    if diff.startswith(".."):
+        raise ValueError("outside root")
+    # ruleid: path-guard-audit-probe-path-sink-python
+    return open(member)
+
+
+# ruleid: path-guard-audit-probe-handler-source-python
+def relpath_diff_no_reject(root, member):
+    diff = os.path.relpath(member, root)
+    inside = not diff.startswith("..")
+    # ruleid: path-guard-audit-probe-intervening-validation-python
+    if inside:
+        # ruleid: path-guard-audit-probe-path-sink-python
+        return open(member)
+    return None
+
+
+# ruleid: path-guard-audit-probe-handler-source-python
+def relpath_diff_other_var(root, member):
+    diff = os.path.relpath(member, root)
+    other = os.path.relpath("/", root)
+    # ruleid: path-guard-audit-probe-relpath-boundary-python,path-guard-audit-probe-intervening-validation-python
+    if other.startswith(".."):
+        raise ValueError("outside root")
+    # ruleid: path-guard-audit-probe-path-sink-python
+    return open(member)

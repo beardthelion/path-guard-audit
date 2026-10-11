@@ -484,3 +484,97 @@ rules:
             - pattern: <... $V.startsWith($R + $S.sep) ...>
             - pattern: <... $V.startsWith($R + "/") ...>
             - pattern: <... $V.startsWith($R + '/') ...>
+
+  - id: path-guard-audit-probe-relpath-boundary-typescript
+    message: >-
+      Site probe: in-function path.relative-diff boundary guard. The
+      function assigns a variable from path.relative (or a bare
+      relative call) and, inside an `if` that rejects (throw / return /
+      continue), checks that diff for '..' literals:
+      `d.startsWith('..')`. A path.relative result is either '..',
+      '../<nested>', an in-root relative path, or an absolute path, so
+      the bare '..' prefix check is a complete boundary. classify.py
+      then binds the relative() target argument (not the diff
+      variable) to a sink's first argument or receiver before
+      resolving the site recognized-complete.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: canonical_boundary_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              function $F(...) {
+                ...
+                $D = path.relative(...)
+                ...
+              }
+          - pattern-inside: |
+              function $F(...) {
+                ...
+                $D = relative(...)
+                ...
+              }
+          - pattern-inside: |
+              async function $F(...) {
+                ...
+                $D = path.relative(...)
+                ...
+              }
+          - pattern-inside: |
+              async function $F(...) {
+                ...
+                $D = relative(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = (...) => {
+                ...
+                $D = path.relative(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = (...) => {
+                ...
+                $D = relative(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = async (...) => {
+                ...
+                $D = path.relative(...)
+                ...
+              }
+          - pattern-inside: |
+              $F = async (...) => {
+                ...
+                $D = relative(...)
+                ...
+              }
+      - pattern-either:
+          - pattern: |
+              if ($C) {
+                ...
+                throw ...
+                ...
+              }
+          - pattern: |
+              if ($C) {
+                ...
+                return ...
+                ...
+              }
+          - pattern: |
+              if ($C) {
+                ...
+                continue
+                ...
+              }
+      - metavariable-pattern:
+          metavariable: $C
+          pattern-either:
+            - pattern: <... $D.startsWith('..') ...>
+            - pattern: <... $D.startsWith("..") ...>
